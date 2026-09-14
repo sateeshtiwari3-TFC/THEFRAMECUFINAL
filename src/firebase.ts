@@ -131,7 +131,33 @@ export async function seedDatabaseIfEmpty() {
         googleDriveLink: 'https://drive.google.com/drive/folders/aarav_meera',
         deliveryFolder: '/Deliveries/Aarav_Meera_Final',
         rawDataFolder: '/Raw/WD_A/Aarav_Meera',
-        finalExportFolder: '/Exports/Aarav_Meera_v2'
+        finalExportFolder: '/Exports/Aarav_Meera_v2',
+        referencePhotos: [
+          {
+            id: 'ref-seed-01',
+            url: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800',
+            name: 'Mandap_Decor_Lighting.jpg',
+            caption: 'Mandap Warm Tungsten Ambient Lighting Reference',
+            uploadedAt: '2026-05-12T10:30:00Z',
+            storageProvider: 'supabase'
+          },
+          {
+            id: 'ref-seed-02',
+            url: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&q=80&w=800',
+            name: 'Bridal_Entry_Angle.jpg',
+            caption: 'Bridal Entry Slow-Mo Gimbal Tracking Reference',
+            uploadedAt: '2026-05-12T11:15:00Z',
+            storageProvider: 'supabase'
+          },
+          {
+            id: 'ref-seed-03',
+            url: 'https://images.unsplash.com/photo-1607190074257-dd4b7af0309f?auto=format&fit=crop&q=80&w=800',
+            name: 'Couple_Portrait_Grading.jpg',
+            caption: 'Sunset Golden Hour Grade Preset',
+            uploadedAt: '2026-05-12T17:45:00Z',
+            storageProvider: 'supabase'
+          }
+        ]
       }
     ];
 

@@ -17,12 +17,16 @@ import {
   Info,
   RotateCcw,
   Loader2,
-  ImageIcon
+  ImageIcon,
+  Briefcase,
+  TrendingUp,
+  AlertTriangle
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Project, Studio, Editor, ProjectStatus, ProjectPriority, UserRole } from '../../types';
 import { PREDEFINED_PROJECT_TAGS } from '../../projectTags';
 import { uploadPhotoFile } from '../../services/storageService';
+import EditorLoadIndicator, { calculateEditorLoad } from '../EditorLoadIndicator';
 
 interface ProjectFormModalProps {
   isOpen: boolean;
@@ -31,6 +35,7 @@ interface ProjectFormModalProps {
   editingProject: Project | null;
   studios: Studio[];
   editors: Editor[];
+  projects?: Project[];
   userRole: UserRole;
   currentStudioId?: string;
 }
@@ -59,6 +64,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   editingProject,
   studios,
   editors,
+  projects = [],
   userRole,
   currentStudioId
 }) => {
@@ -590,9 +596,16 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
 
                 {/* 3. Studio Partner & Lead Editor Assignment */}
                 <div className="p-4 bg-charcoal-950/60 rounded-2xl border border-white/5 space-y-3">
-                  <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">
-                    3. Studio Partner & Editor Team <span className="text-rose-400">*</span>
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+                      3. Studio Partner & Editor Team <span className="text-rose-400">*</span>
+                    </label>
+                    <span className="text-[10px] font-mono text-gold-400 flex items-center gap-1">
+                      <Briefcase className="w-3 h-3 text-gold-400" />
+                      <span>Capacity Planning</span>
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <span className="text-[9px] font-mono text-gray-500 uppercase block mb-1">Studio Partner</span>
@@ -612,13 +625,61 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                         onChange={(e) => setAssignedEditorId(e.target.value)}
                         className="w-full bg-charcoal-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-gold-500/40 cursor-pointer"
                       >
-                        {editors.map(ed => <option key={ed.id} value={ed.id}>{ed.name} ({ed.role})</option>)}
+                        {editors.map(ed => {
+                          const load = calculateEditorLoad(ed, projects);
+                          const statusTag = load.status === 'overloaded' ? '⚠️ At Capacity' : load.status === 'busy' ? 'Heavy' : load.status === 'optimal' ? 'Optimal' : 'Available';
+                          return (
+                            <option key={ed.id} value={ed.id}>
+                              {ed.name} — {load.activeCount} Active ({statusTag})
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   </div>
 
+                  {/* Lead Editor Live Capacity Planning Card */}
+                  {(() => {
+                    const selectedLeadEditor = editors.find(ed => ed.id === assignedEditorId);
+                    if (!selectedLeadEditor) return null;
+                    const leadLoad = calculateEditorLoad(selectedLeadEditor, projects);
+                    const isOverloaded = leadLoad.status === 'overloaded';
+
+                    return (
+                      <div className="mt-2 p-3 rounded-xl bg-charcoal-900/90 border border-white/10 space-y-2 font-mono">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                            <span className="font-bold text-white">{selectedLeadEditor.name}</span>
+                            <span className="text-[10px] text-gray-500">({selectedLeadEditor.role})</span>
+                          </div>
+                          <EditorLoadIndicator
+                            editor={selectedLeadEditor}
+                            projects={projects}
+                            variant="pill"
+                          />
+                        </div>
+
+                        <EditorLoadIndicator
+                          editor={selectedLeadEditor}
+                          projects={projects}
+                          variant="compact"
+                          showBar={true}
+                        />
+
+                        {isOverloaded && (
+                          <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-start gap-2 text-[10px] text-rose-300">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                            <span>
+                              <strong>High Workload Warning:</strong> {selectedLeadEditor.name} already has {leadLoad.activeCount} active projects. Assigning this project may cause delivery delays.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Split Project Toggle */}
-                  <div className="pt-2 border-t border-white/5">
+                  <div className="pt-2 border-t border-white/5 space-y-2">
                     <label className="flex items-center gap-2 cursor-pointer text-xs font-mono text-gray-300">
                       <input
                         type="checkbox"
@@ -630,29 +691,65 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                     </label>
 
                     {isSplitProject && (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-2.5">
-                        <select
-                          value={secondEditorId}
-                          onChange={(e) => setSecondEditorId(e.target.value)}
-                          className="bg-charcoal-900 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
-                        >
-                          <option value="">Select 2nd Editor</option>
-                          {editors.map(ed => <option key={ed.id} value={ed.id}>{ed.name}</option>)}
-                        </select>
-                        <input
-                          type="number"
-                          placeholder="Lead Share ₹"
-                          value={firstEditorShare}
-                          onChange={(e) => setFirstEditorShare(Number(e.target.value))}
-                          className="bg-charcoal-900 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
-                        />
-                        <input
-                          type="number"
-                          placeholder="2nd Share ₹"
-                          value={secondEditorShare}
-                          onChange={(e) => setSecondEditorShare(Number(e.target.value))}
-                          className="bg-charcoal-900 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
-                        />
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          <select
+                            value={secondEditorId}
+                            onChange={(e) => setSecondEditorId(e.target.value)}
+                            className="bg-charcoal-900 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                          >
+                            <option value="">Select 2nd Editor</option>
+                            {editors.map(ed => {
+                              const load = calculateEditorLoad(ed, projects);
+                              const statusTag = load.status === 'overloaded' ? '⚠️ Full' : load.status === 'busy' ? 'Heavy' : 'Available';
+                              return (
+                                <option key={ed.id} value={ed.id}>
+                                  {ed.name} ({load.activeCount} Active - {statusTag})
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <input
+                            type="number"
+                            placeholder="Lead Share ₹"
+                            value={firstEditorShare}
+                            onChange={(e) => setFirstEditorShare(Number(e.target.value))}
+                            className="bg-charcoal-900 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                          />
+                          <input
+                            type="number"
+                            placeholder="2nd Share ₹"
+                            value={secondEditorShare}
+                            onChange={(e) => setSecondEditorShare(Number(e.target.value))}
+                            className="bg-charcoal-900 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Second Editor Capacity Card */}
+                        {(() => {
+                          const selectedSecEditor = editors.find(ed => ed.id === secondEditorId);
+                          if (!selectedSecEditor) return null;
+                          const secLoad = calculateEditorLoad(selectedSecEditor, projects);
+
+                          return (
+                            <div className="p-2.5 rounded-xl bg-charcoal-900/80 border border-white/10 space-y-1.5 font-mono">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-300 font-bold">2nd Editor: {selectedSecEditor.name}</span>
+                                <EditorLoadIndicator
+                                  editor={selectedSecEditor}
+                                  projects={projects}
+                                  variant="pill"
+                                />
+                              </div>
+                              <EditorLoadIndicator
+                                editor={selectedSecEditor}
+                                projects={projects}
+                                variant="compact"
+                                showBar={true}
+                              />
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

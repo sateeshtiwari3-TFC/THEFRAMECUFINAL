@@ -25,6 +25,11 @@
         "type": { "type": "string" },
         "projectId": { "type": "string" },
         "studioId": { "type": "string" },
+        "editorId": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "recipientRole": { "type": "string" },
+        "gettingStartedLinks": { "type": "array" },
+        "tips": { "type": "array" },
         "calendarEventId": { "type": "string" },
         "isAutomated": { "type": "boolean" },
         "read": { "type": "boolean" }
@@ -189,9 +194,60 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "name", "targetStatus"]
+    },
+    "system_sync": {
+      "title": "System Synchronization",
+      "description": "TrueTime master clock synchronization and workstation telemetry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "clientReqTime": { "type": "number" },
+        "workstation": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["timestamp"]
+    },
+    "studios": {
+      "title": "Studios",
+      "description": "Partner wedding studios and production companies",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "tier": { "type": "string" }
+      },
+      "required": ["id", "name", "phone", "email"]
+    },
+    "editors": {
+      "title": "Editors",
+      "description": "Video editors, colorists, and post-production specialists",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "rating": { "type": "number" },
+        "specialties": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "name", "email", "phone"]
     }
   },
   "firestore": {
+    "studios/{studioId}": {
+      "schema": "studios",
+      "description": "Partner wedding studios directory"
+    },
+    "editors/{editorId}": {
+      "schema": "editors",
+      "description": "Video editors directory"
+    },
     "users/{userId}": {
       "schema": "users",
       "description": "User profile collection"
@@ -235,6 +291,10 @@
     "automation_rules/{ruleId}": {
       "schema": "automation_rules",
       "description": "Status transition automation rules and keyword triggers"
+    },
+    "system_sync/{syncId}": {
+      "schema": "system_sync",
+      "description": "TrueTime master clock synchronization and workstation telemetry"
     }
   }
 }

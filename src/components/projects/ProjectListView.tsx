@@ -18,11 +18,16 @@ import {
   Building2,
   AlertCircle,
   Activity,
-  RotateCcw
+  RotateCcw,
+  ShieldCheck,
+  TrendingUp
 } from 'lucide-react';
 import { Project, Studio, Editor, Revision, UserRole, ProjectStatus } from '../../types';
 import { ProjectTagList } from '../ProjectTagBadge';
-import ProjectStatusBadge from '../ProjectStatusBadge';
+import ProjectStatusBadge, { WORKFLOW_STAGES } from '../ProjectStatusBadge';
+import ProjectUrgencyBadge from './ProjectUrgencyBadge';
+import NewBadge from '../common/NewBadge';
+import { LazyImage } from '../common/LazyImage';
 
 interface ProjectListViewProps {
   projects: Project[];
@@ -46,18 +51,8 @@ interface ProjectListViewProps {
   onUpdateStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
   onResetProject?: (proj: Project, e: React.MouseEvent) => void;
   setHoveredPhoto: (photo: { url: string; title: string; subtitle: string } | null) => void;
+  onOpenQualityControl?: (proj: Project) => void;
 }
-
-const WORKFLOW_STAGES: { id: ProjectStatus; label: string; color: string; bg: string }[] = [
-  { id: 'data_received', label: 'Received', color: 'text-sky-300', bg: 'bg-sky-500/20 text-sky-300' },
-  { id: 'assigned', label: 'Assigned', color: 'text-indigo-300', bg: 'bg-indigo-500/20 text-indigo-300' },
-  { id: 'editing', label: 'Editing', color: 'text-amber-300', bg: 'bg-amber-500/25 text-amber-300' },
-  { id: 'review', label: 'Review', color: 'text-purple-300', bg: 'bg-purple-500/20 text-purple-300' },
-  { id: 'revision', label: 'Revision', color: 'text-rose-300', bg: 'bg-rose-500/20 text-rose-300' },
-  { id: 'rendering', label: 'Rendering', color: 'text-teal-300', bg: 'bg-teal-500/20 text-teal-300' },
-  { id: 'delivered', label: 'Delivered', color: 'text-emerald-300', bg: 'bg-emerald-500/25 text-emerald-300' },
-  { id: 'closed', label: 'Closed', color: 'text-slate-300', bg: 'bg-slate-800/80 text-slate-300' }
-];
 
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=600';
 
@@ -120,7 +115,8 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({
   onToggleTag,
   onUpdateStatus,
   onResetProject,
-  setHoveredPhoto
+  setHoveredPhoto,
+  onOpenQualityControl
 }) => {
   // Real-time breakdown counts
   const breakdown = React.useMemo(() => {
@@ -292,10 +288,13 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({
                         {/* ID & Couple with Cover Photo */}
                         <div>
                           <div className="flex items-center space-x-3">
-                            <img
+                            <LazyImage
                               src={proj.couplePhoto || DEFAULT_COVER_IMAGE}
+                              fallbackSrc={DEFAULT_COVER_IMAGE}
                               alt=""
-                              className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-gold-500/60 transition-all cursor-zoom-in shrink-0"
+                              containerClassName="w-10 h-10 rounded-xl shrink-0 ring-1 ring-white/10 group-hover:ring-gold-500/60 transition-all"
+                              className="w-full h-full object-cover cursor-zoom-in"
+                              rootMargin="100px 0px"
                               onMouseEnter={() => setHoveredPhoto({
                                 url: proj.couplePhoto || DEFAULT_COVER_IMAGE,
                                 title: proj.coupleName,
@@ -340,15 +339,22 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({
                           />
                         </div>
 
-                        {/* Deadline */}
+                        {/* Deadline & Urgency Indicator */}
                         <div>
-                          <div className="text-xs font-mono">
-                            <span className="text-gray-300 block">{proj.deliveryDate || 'No date'}</span>
-                            {remainingDays !== null && (
-                              <span className={`text-[10px] font-bold ${
-                                isOverdue ? 'text-rose-400 animate-pulse' : isUrgent ? 'text-amber-400' : 'text-emerald-400'
-                              }`}>
-                                {isOverdue ? `⚠️ ${Math.abs(remainingDays)}d Overdue` : `${remainingDays}d left`}
+                          <div className="flex flex-col gap-1 items-start">
+                            <div className="flex items-center gap-1">
+                              <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
+                              <ProjectUrgencyBadge
+                                deliveryDate={proj.deliveryDate}
+                                status={proj.status}
+                                size="xs"
+                                showDot={true}
+                                showIcon={true}
+                              />
+                            </div>
+                            {proj.deliveryDate && (
+                              <span className="text-[10px] font-mono text-gray-400">
+                                {proj.deliveryDate}
                               </span>
                             )}
                           </div>
@@ -380,6 +386,17 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({
                               <span className={`text-[10px] ${pendingBalance > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}`}>
                                 {pendingBalance > 0 ? `Due: ₹${pendingBalance.toLocaleString('en-IN')}` : 'Paid ✓'}
                               </span>
+                              {amount > 0 && (() => {
+                                const profit = amount - ((proj.editorPayment || 0) + (proj.otherExpenses || 0));
+                                const margin = Math.round((profit / amount) * 100);
+                                return (
+                                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border block mt-0.5 w-fit ${
+                                    margin >= 50 ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' : margin >= 25 ? 'text-amber-400 bg-amber-500/15 border-amber-500/30' : 'text-rose-400 bg-rose-500/15 border-rose-500/30'
+                                  }`}>
+                                    Margin: {margin}%
+                                  </span>
+                                );
+                              })()}
                             </div>
                           ) : (
                             <div className="text-xs font-mono text-gold-400 font-bold">
@@ -391,6 +408,21 @@ export const ProjectListView: React.FC<ProjectListViewProps> = ({
                         {/* Actions */}
                         <div className="text-right pr-2" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1.5">
+                            {onOpenQualityControl && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenQualityControl(proj)}
+                                className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                  proj.qcStatus === 'passed'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
+                                    : 'bg-white/5 hover:bg-gold-500/20 text-gold-400 border-white/5 hover:border-gold-500/30'
+                                }`}
+                                title="SAP QM Quality Inspection"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => onOpenWhatsAppShare(proj)}

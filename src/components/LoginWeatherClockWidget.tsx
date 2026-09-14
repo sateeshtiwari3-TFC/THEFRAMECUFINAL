@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
+  Clock,
+  Radio,
+  Watch,
+  Compass,
+  Maximize2,
   Moon, 
   Sun, 
   Droplets, 
@@ -13,9 +18,17 @@ import {
   Check,
   X,
   Loader2,
-  Sparkles
+  Sparkles,
+  Bell,
+  BellRing,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useFirestoreServerTime } from '../hooks/useFirestoreServerTime';
+import LuxuryAnalogClock from './common/LuxuryAnalogClock';
+import { useDeadlineAlarms } from '../hooks/useDeadlineAlarms';
+import DeadlineAlarmsModal from './common/DeadlineAlarmsModal';
+import { Project } from '../types';
 
 interface CityPreset {
   name: string;
@@ -54,14 +67,80 @@ interface SearchResult {
 }
 
 export default function LoginWeatherClockWidget({ 
-  layout: initialLayout = 'vertical' 
+  layout: initialLayout = 'vertical',
+  projects = []
 }: { 
-  layout?: 'horizontal' | 'vertical' | 'compact' 
+  layout?: 'horizontal' | 'vertical' | 'compact';
+  projects?: Project[];
 }) {
   const [layoutMode, setLayoutMode] = useState<'horizontal' | 'vertical'>(
     initialLayout === 'vertical' ? 'vertical' : 'horizontal'
   );
-  const [time, setTime] = useState<Date>(new Date());
+  
+  // Realtime Cloud Firestore TrueTime synchronized clock
+  const { 
+    time, 
+    isSynced, 
+    isSyncing, 
+    offsetMs, 
+    latencyMs, 
+    syncNow 
+  } = useFirestoreServerTime();
+
+  // Project Deadline Alarms & Visual Analog Clock Face Glow
+  const {
+    alarms,
+    activeTriggeredAlarms,
+    hasActiveGlow,
+    upcomingAlarms,
+    addAlarm,
+    toggleAlarm,
+    removeAlarm,
+    dismissAlarm,
+    dismissAllTriggered,
+    snoozeAlarm,
+    triggerTestAlarm
+  } = useDeadlineAlarms(time);
+
+  const [showAlarmsModal, setShowAlarmsModal] = useState<boolean>(false);
+
+  // Map active project deadline alarms to 12-hour dial positions for visual markers on LuxuryAnalogClock
+  const alarmMarkers = useMemo(() => {
+    return alarms
+      .filter((a) => a.enabled)
+      .map((alarm) => {
+        const targetDate = new Date(alarm.targetTime);
+        const targetHours = targetDate.getHours();
+        const targetMins = targetDate.getMinutes();
+        const angleDeg = (targetHours % 12) * 30 + targetMins * 0.5;
+        const isTriggered = activeTriggeredAlarms.some((a) => a.id === alarm.id);
+        return {
+          angleDeg,
+          isTriggered,
+          title: alarm.projectTitle,
+          formattedTime: targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+      });
+  }, [alarms, activeTriggeredAlarms]);
+
+  // Alternative Clock Visual: 'analog' luxury rotating circular face vs 'digital'
+  const [clockVisualMode, setClockVisualMode] = useState<'analog' | 'digital'>(() => {
+    try {
+      return (localStorage.getItem('framecut_clock_visual_mode') as 'analog' | 'digital') || 'analog';
+    } catch {
+      return 'analog';
+    }
+  });
+  const [showHorologyModal, setShowHorologyModal] = useState<boolean>(false);
+
+  const handleSetClockVisualMode = (mode: 'analog' | 'digital') => {
+    setClockVisualMode(mode);
+    try {
+      localStorage.setItem('framecut_clock_visual_mode', mode);
+    } catch (e) {
+      console.error(e);
+    }
+  };
   
   // Load saved location from localStorage or default to Forest
   const [selectedCity, setSelectedCity] = useState<CityPreset>(() => {
@@ -84,12 +163,6 @@ export default function LoginWeatherClockWidget({
   const [searching, setSearching] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<string>('');
   const [gpsLoading, setGpsLoading] = useState<boolean>(false);
-
-  // Live Clock update
-  useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Fetch live weather from Open-Meteo
   const fetchWeather = async (lat: number, lon: number) => {
@@ -187,10 +260,11 @@ export default function LoginWeatherClockWidget({
   // GPS Detect handler
   const handleDetectGPS = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      setSearchError('Geolocation is not supported by your browser');
       return;
     }
     setGpsLoading(true);
+    setSearchError(null);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const lat = pos.coords.latitude;
@@ -200,7 +274,6 @@ export default function LoginWeatherClockWidget({
         let cityName = 'Current Location';
         try {
           const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${lat.toFixed(2)}`);
-          // Or simplified label
           cityName = 'Live GPS Location';
         } catch (e) {
           console.error(e);
@@ -219,7 +292,7 @@ export default function LoginWeatherClockWidget({
       (err) => {
         console.error(err);
         setGpsLoading(false);
-        alert('Could not detect GPS position. Please type city name in search box.');
+        setSearchError('Could not detect GPS position. Please select or search city name above.');
       }
     );
   };
@@ -243,108 +316,297 @@ export default function LoginWeatherClockWidget({
     hour12: true
   });
 
+  const hoursRaw = time.getHours();
+  const hours12 = hoursRaw % 12 || 12;
+  const hoursStr = String(hours12).padStart(2, '0');
+  const minutesStr = String(time.getMinutes()).padStart(2, '0');
+  const secondsStr = String(time.getSeconds()).padStart(2, '0');
+  const ampm = hoursRaw >= 12 ? 'PM' : 'AM';
+
+  // User-configurable analog clock size scale ('standard' | 'large' | 'giant')
+  const [analogClockScale, setAnalogClockScale] = useState<'standard' | 'large' | 'giant'>(() => {
+    try {
+      return (localStorage.getItem('framecut_analog_clock_scale') as 'standard' | 'large' | 'giant') || 'large';
+    } catch {
+      return 'large';
+    }
+  });
+
+  const handleSetClockScale = (scale: 'standard' | 'large' | 'giant') => {
+    setAnalogClockScale(scale);
+    try {
+      localStorage.setItem('framecut_analog_clock_scale', scale);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Compute responsive pixel diameter (large is 122px, giant is 144px, standard is 96px)
+  const analogDialDiameter = analogClockScale === 'giant' ? 144 : analogClockScale === 'large' ? 122 : 96;
+
   return (
-    <div className={`w-full ${layoutMode === 'vertical' ? 'max-w-[320px] sm:max-w-[340px]' : 'max-w-4xl'} mx-auto select-none relative transition-all duration-300`}>
-      {/* HORIZONTAL WIDE LANDSCAPE BAR LAYOUT */}
+    <div className={`w-full ${layoutMode === 'vertical' ? 'max-w-[320px] sm:max-w-[360px]' : 'max-w-3xl sm:max-w-4xl'} mx-auto select-none relative transition-all duration-300`}>
+      {/* HORIZONTAL WIDE DASHBOARD STUDIO CHRONOMETER & WEATHER BAR */}
       {layoutMode === 'horizontal' ? (
-        <div className="rounded-2xl sm:rounded-3xl bg-black/40 backdrop-blur-2xl border border-white/20 p-3.5 sm:p-4 lg:p-5 shadow-[0_15px_40px_rgba(0,0,0,0.7)] relative overflow-hidden flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3.5 sm:gap-4 group hover:border-white/30 transition-all duration-500 w-full min-w-0">
-          {/* Subtle glass glow */}
-          <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
+        <div className="rounded-2xl sm:rounded-3xl bg-charcoal-900/90 backdrop-blur-2xl border border-gold-500/30 p-3 sm:p-4 shadow-[0_15px_35px_rgba(0,0,0,0.7)] relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-3.5 sm:gap-5 group hover:border-gold-400/50 transition-all duration-300 w-full min-w-0">
+          {/* Subtle warm amber ambient banner highlight */}
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-gold-400/40 to-transparent pointer-events-none" />
 
-          {/* Left: Aperture Clock Lens Portal */}
-          <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 w-full xl:w-auto">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-full border border-white/25 overflow-hidden shadow-[inset_0_4px_15px_rgba(0,0,0,0.6)] relative flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-500">
-              <img 
-                src="https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&q=80" 
-                alt="Forest Canopy" 
-                className="w-full h-full object-cover filter contrast-125 brightness-90"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30" />
+          {/* SECTION 1: MASTER REALTIME CLOCK (ANALOG ROTATING LUXURY FACE OR DIGITAL) */}
+          <div className="flex items-center space-x-3 sm:space-x-4 shrink-0 min-w-0 w-full sm:w-auto justify-center sm:justify-start">
+            {clockVisualMode === 'analog' ? (
+              /* LUXURY ROTATING ANALOG WATCH VISUALIZATION */
+              <>
+                <LuxuryAnalogClock 
+                  time={time} 
+                  size={analogDialDiameter} 
+                  isSynced={isSynced} 
+                  isSyncing={isSyncing} 
+                  isGlowing={hasActiveGlow}
+                  activeAlarmTitle={activeTriggeredAlarms[0]?.projectTitle}
+                  alarmMarkers={alarmMarkers}
+                  onClick={() => setShowHorologyModal(true)} 
+                />
 
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-1 text-center">
-                <span className="text-[9px] sm:text-[10px] lg:text-[11px] font-mono font-bold tracking-wider text-white drop-shadow">
-                  {formattedTime}
-                </span>
-                <span className="text-[7px] sm:text-[8px] font-mono text-emerald-300 bg-black/60 px-1 py-0.2 rounded-full border border-emerald-500/30">
-                  LIVE CLOCK
-                </span>
-              </div>
-            </div>
+                <div className="flex flex-col min-w-0 justify-center">
+                  {/* Digital Counterpart & Inspect Button */}
+                  <div className="flex items-baseline space-x-1.5">
+                    <span className="text-xl sm:text-2xl font-black font-mono tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                      {hoursStr}:{minutesStr}
+                    </span>
+                    <span className="text-xs sm:text-sm font-bold font-mono text-gold-400">
+                      :{secondsStr}
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded bg-gold-500/20 border border-gold-400/40 text-[9px] sm:text-[10px] font-mono font-extrabold text-gold-300">
+                      {ampm}
+                    </span>
 
-            {/* City Name & Date Info */}
-            <div className="flex flex-col text-left space-y-0.5 min-w-0 flex-1">
-              <div className="flex items-center space-x-2 flex-wrap min-w-0">
+                    {/* Inspect Watchmaker Dial Modal Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowHorologyModal(true)}
+                      className="p-1 rounded-md bg-white/5 hover:bg-gold-500/20 text-zinc-400 hover:text-gold-300 transition-colors border border-white/10 ml-1 cursor-pointer"
+                      title="Inspect Luxury Studio Chronometer in Detail"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Full Date String & Firestore Server Sync Indicator */}
+                  <div className="flex items-center space-x-2 text-[10px] sm:text-[11px] font-mono text-zinc-300 font-medium truncate mt-0.5">
+                    <span className="shrink-0">{formattedDate}</span>
+                    <span className="text-zinc-600 shrink-0">•</span>
+                    <button
+                      type="button"
+                      onClick={() => syncNow()}
+                      className="text-[9px] text-emerald-400/90 hover:text-emerald-300 flex items-center space-x-1 cursor-pointer transition-colors shrink-0"
+                      title={`Firestore Server TrueTime Synced across studio workstations (Offset: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms, Ping: ${latencyMs}ms). Click to calibrate now.`}
+                    >
+                      <Radio className={`w-2.5 h-2.5 text-emerald-400 shrink-0 ${isSyncing ? 'animate-spin' : 'animate-pulse'}`} />
+                      <span className="truncate">
+                        {isSyncing ? 'Syncing...' : isSynced ? 'TrueTime Synced' : 'Sync Server'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Segmented Mode Switcher & Deadline Alarms Button */}
+                  <div className="flex items-center space-x-1 mt-1.5 flex-wrap gap-y-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSetClockVisualMode('analog')}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gradient-to-r from-gold-500/30 to-amber-500/20 border border-gold-400/60 text-gold-300 shadow-sm flex items-center space-x-1 cursor-pointer"
+                      title="Active: Luxury Rotating Analog Dial"
+                    >
+                      <Compass className="w-2.5 h-2.5 text-gold-400" />
+                      <span>Analog</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetClockVisualMode('digital')}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent flex items-center space-x-1 transition-all cursor-pointer"
+                      title="Switch to Large Digital Display"
+                    >
+                      <Clock className="w-2.5 h-2.5 text-zinc-400" />
+                      <span>Digital</span>
+                    </button>
+
+                    {/* Clock Dial Size Toggle (Bada / Giant / Standard) */}
+                    <button
+                      type="button"
+                      onClick={() => handleSetClockScale(analogClockScale === 'standard' ? 'large' : analogClockScale === 'large' ? 'giant' : 'standard')}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gold-500/15 hover:bg-gold-500/25 border border-gold-400/40 text-gold-300 flex items-center space-x-1 cursor-pointer transition-all"
+                      title={`Clock Size: Standard (96px), Large (122px), Giant (144px). Currently: ${analogClockScale}. Click to cycle.`}
+                    >
+                      <Maximize2 className="w-2.5 h-2.5 text-gold-400" />
+                      <span>{analogClockScale === 'giant' ? 'Bada+' : analogClockScale === 'large' ? 'Bada' : 'Std'}</span>
+                    </button>
+
+                    {/* Deadline Visual Alarms Configuration Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowAlarmsModal(true)}
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold flex items-center space-x-1 transition-all cursor-pointer ${
+                        hasActiveGlow
+                          ? 'bg-amber-500/35 border border-amber-300 text-amber-200 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]'
+                          : alarms.filter((a) => a.enabled).length > 0
+                          ? 'bg-gold-500/15 border border-gold-400/40 text-gold-300 hover:bg-gold-500/25'
+                          : 'text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent'
+                      }`}
+                      title="Set visual alarms for project deadlines that glow on the analog clock face"
+                    >
+                      <BellRing className={`w-2.5 h-2.5 ${hasActiveGlow ? 'text-amber-300 animate-bounce' : 'text-gold-400'}`} />
+                      <span>
+                        {hasActiveGlow 
+                          ? `Glow Active (${activeTriggeredAlarms.length})` 
+                          : `Alarms (${alarms.filter((a) => a.enabled).length})`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Active Deadline Alarm Warning Banner with Instant Dismiss */}
+                  {hasActiveGlow && activeTriggeredAlarms.length > 0 && (
+                    <div className="flex items-center space-x-1.5 mt-1.5 px-2 py-0.5 rounded-lg bg-amber-500/25 border border-amber-400/60 text-[9px] font-mono text-amber-200 animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                      <span className="truncate max-w-[130px] sm:max-w-[170px] font-bold">
+                        ⚠️ {activeTriggeredAlarms[0]?.projectTitle}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => dismissAlarm(activeTriggeredAlarms[0]?.id)}
+                        className="ml-auto underline text-gold-300 hover:text-white shrink-0 cursor-pointer text-[8px]"
+                        title="Dismiss clock face glow"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* HIGH-CONTRAST DIGITAL CLOCK VISUALIZATION */
+              <>
+                {/* Clock Icon Capsule */}
                 <button
                   type="button"
-                  onClick={() => setShowLocationModal(true)}
-                  className="flex items-center space-x-1 text-lg sm:text-xl lg:text-2xl font-bold font-sans text-white hover:text-gold-300 transition-colors cursor-pointer truncate"
-                  title="Click to change shoot location"
+                  onClick={() => setShowHorologyModal(true)}
+                  title="Master Studio Chronometer. Click to inspect analog dial & server sync."
+                  className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-gradient-to-br from-gold-500/20 to-amber-500/10 border border-gold-500/30 hover:border-gold-400/60 flex flex-col items-center justify-center text-gold-400 shrink-0 shadow-inner transition-all cursor-pointer group/clockbtn"
                 >
-                  <span className="truncate">{selectedCity.name}</span>
-                  <ChevronDown className="w-4 h-4 text-gold-400 shrink-0" />
+                  <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-gold-400 group-hover/clockbtn:scale-110 transition-transform" />
+                  <div className="flex items-center space-x-1 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-spin' : isSynced ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-400'}`} />
+                    <span className="text-[7px] sm:text-[8px] font-mono font-bold text-emerald-300">
+                      {isSyncing ? 'SYNC' : isSynced ? 'TRUE-T' : 'LIVE'}
+                    </span>
+                  </div>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowLocationModal(true)}
-                  className="px-2 py-0.5 rounded-full bg-gold-500/15 hover:bg-gold-500/30 border border-gold-500/30 text-[9px] font-mono text-gold-300 transition-all cursor-pointer flex items-center space-x-1 shrink-0"
-                >
-                  <MapPin className="w-2.5 h-2.5" />
-                  <span>Set Location</span>
-                </button>
-              </div>
+                {/* Main Digital Time Numbers */}
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-baseline space-x-1">
+                    <span className="text-2xl sm:text-3xl lg:text-4xl font-black font-mono tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">
+                      {hoursStr}:{minutesStr}
+                    </span>
+                    <span className="text-sm sm:text-base font-bold font-mono text-gold-400">
+                      :{secondsStr}
+                    </span>
+                    <span className="ml-1.5 px-2 py-0.5 rounded-md bg-gold-500/20 border border-gold-400/40 text-[10px] sm:text-xs font-mono font-extrabold text-gold-300">
+                      {ampm}
+                    </span>
+                  </div>
 
-              <div className="flex items-center space-x-2 text-[11px] sm:text-xs text-gray-300 font-mono truncate">
-                <span className="font-semibold text-white shrink-0">{formattedDate}</span>
-                <span className="shrink-0">•</span>
-                <span className="text-gold-300 truncate">{weather?.conditionText || 'Misty Woodland'}</span>
-              </div>
+                  {/* Full Date String & Firestore Server Sync Indicator */}
+                  <div className="flex items-center space-x-2 text-[11px] sm:text-xs font-mono text-zinc-300 font-medium truncate mt-0.5">
+                    <span className="shrink-0">{formattedDate}</span>
+                    <span className="text-zinc-600 shrink-0">•</span>
+                    <button
+                      type="button"
+                      onClick={() => syncNow()}
+                      className="text-[9px] text-emerald-400/90 hover:text-emerald-300 flex items-center space-x-1 cursor-pointer transition-colors shrink-0"
+                      title={`Firestore Server TrueTime Synced across studio workstations (Offset: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms, Ping: ${latencyMs}ms). Click to calibrate now.`}
+                    >
+                      <Radio className={`w-2.5 h-2.5 text-emerald-400 shrink-0 ${isSyncing ? 'animate-spin' : 'animate-pulse'}`} />
+                      <span className="truncate">
+                        {isSyncing ? 'Syncing Server...' : isSynced ? 'Cloud Synced' : 'Sync Server'}
+                      </span>
+                    </button>
+                  </div>
 
-              <p className="text-[10px] sm:text-[11px] text-gray-400 font-sans truncate max-w-full">
-                🎬 {weather?.shootAdvice || 'Optimal Natural Light for Outdoor Shoots'}
-              </p>
-            </div>
+                  {/* Segmented Mode Switcher */}
+                  <div className="flex items-center space-x-1 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSetClockVisualMode('analog')}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent flex items-center space-x-1 transition-all cursor-pointer"
+                      title="Switch to Luxury Rotating Analog Dial"
+                    >
+                      <Compass className="w-2.5 h-2.5 text-gold-400" />
+                      <span>Analog</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetClockVisualMode('digital')}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gradient-to-r from-gold-500/30 to-amber-500/20 border border-gold-400/60 text-gold-300 shadow-sm flex items-center space-x-1 cursor-pointer"
+                      title="Active: Digital Clock"
+                    >
+                      <Clock className="w-2.5 h-2.5 text-gold-400" />
+                      <span>Digital</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Right: Weather Metrics & Controls */}
-          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 w-full xl:w-auto justify-between xl:justify-end border-t xl:border-t-0 border-white/10 pt-2.5 xl:pt-0">
-            {/* Weather Metrics Joined Bar */}
-            <div className="flex items-center bg-white/10 backdrop-blur-md rounded-2xl p-1 sm:p-1.5 border border-white/20 shadow-inner space-x-1 sm:space-x-1.5 text-[11px] sm:text-xs font-mono min-w-0 overflow-x-auto custom-scrollbar">
-              <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 rounded-xl bg-black/40 text-white border border-white/10 shrink-0">
-                {weather?.isNight ? <Moon className="w-3.5 h-3.5 text-sky-200" /> : <Sun className="w-3.5 h-3.5 text-amber-300" />}
-                <span className="font-bold">{weather ? `${weather.tempC}°C` : '16°C'}</span>
-              </div>
+          {/* Divider on tablet/desktop */}
+          <div className="hidden sm:block h-12 w-px bg-white/10 shrink-0" />
 
-              <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 rounded-xl bg-black/40 text-white border border-white/10 shrink-0">
-                <Droplets className="w-3.5 h-3.5 text-sky-300" />
-                <span className="font-bold">{weather ? `${weather.humidity}%` : '85%'}</span>
-              </div>
+          {/* SECTION 2: STUDIO SHOOT LOCATION & WEATHER CAPSULE */}
+          <div className="flex flex-col sm:items-end space-y-1.5 min-w-0 w-full sm:w-auto">
+            {/* Top row: City Name & Change Button + Refresh */}
+            <div className="flex items-center justify-between sm:justify-end space-x-2 w-full">
+              <button
+                type="button"
+                onClick={() => setShowLocationModal(true)}
+                className="flex items-center space-x-1 text-xs sm:text-sm font-bold text-white hover:text-gold-300 transition-colors cursor-pointer group/btn"
+                title="Change shoot location"
+              >
+                <MapPin className="w-3.5 h-3.5 text-gold-400 shrink-0 group-hover/btn:scale-110 transition-transform" />
+                <span className="truncate max-w-[130px] sm:max-w-[170px]">{selectedCity.name}</span>
+                <ChevronDown className="w-3 h-3 text-zinc-400 shrink-0" />
+              </button>
 
-              <div className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-3 py-1 rounded-xl bg-black/40 text-white border border-white/10 shrink-0">
-                <Wind className="w-3.5 h-3.5 text-emerald-300" />
-                <span className="font-bold">{weather ? `${weather.windSpeedMs}m/s` : '4m/s'}</span>
-              </div>
-            </div>
-
-            {/* Refresh + Layout Switcher */}
-            <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => fetchWeather(selectedCity.lat, selectedCity.lon)}
-                className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-white/15 text-white/70 hover:text-white transition-colors cursor-pointer border border-white/10"
-                title="Refresh weather"
+                className="p-1 sm:p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-zinc-400 hover:text-white transition-colors cursor-pointer border border-white/10 shrink-0"
+                title="Refresh live weather"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-gold-400' : ''}`} />
+                <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-gold-400' : ''}`} />
               </button>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => setLayoutMode('vertical')}
-                className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-white/15 text-white/70 hover:text-white transition-colors cursor-pointer border border-white/10 text-[10px] font-mono"
-                title="Switch to vertical capsule format"
-              >
-                ↕ Tower
-              </button>
+            {/* Middle row: Weather metric pills */}
+            <div className="flex items-center space-x-1 sm:space-x-1.5 text-[10px] sm:text-[11px] font-mono">
+              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-black/50 text-white border border-white/10 shrink-0">
+                {weather?.isNight ? <Moon className="w-3 h-3 text-sky-200" /> : <Sun className="w-3 h-3 text-amber-300" />}
+                <span className="font-bold">{weather ? `${weather.tempC}°C` : '24°C'}</span>
+              </div>
+
+              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-black/50 text-white border border-white/10 shrink-0">
+                <Droplets className="w-3 h-3 text-sky-300" />
+                <span className="font-bold">{weather ? `${weather.humidity}%` : '65%'}</span>
+              </div>
+
+              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-black/50 text-white border border-white/10 shrink-0">
+                <Wind className="w-3 h-3 text-emerald-300" />
+                <span className="font-bold">{weather ? `${weather.windSpeedMs}m/s` : '3m/s'}</span>
+              </div>
+            </div>
+
+            {/* Bottom row: Shoot condition advice */}
+            <div className="text-[10px] text-gold-300/90 font-mono truncate max-w-[240px] sm:max-w-[280px] text-left sm:text-right">
+              🎬 {weather?.shootAdvice || 'Optimal Natural Light for Outdoor Shoots'}
             </div>
           </div>
         </div>
@@ -355,28 +617,69 @@ export default function LoginWeatherClockWidget({
           {/* Subtle inner glass highlight */}
           <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 to-transparent pointer-events-none rounded-t-[100px]" />
 
-          {/* Top Circular Aperture Portal showing the background foliage */}
-          <div className="w-40 h-40 sm:w-44 sm:h-44 rounded-full border border-white/25 overflow-hidden shadow-[inset_0_4px_20px_rgba(0,0,0,0.6)] relative my-2 flex items-center justify-center shrink-0">
-            <img 
-              src="https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&q=80" 
-              alt="Forest Canopy" 
-              className="w-full h-full object-cover filter contrast-125 brightness-90 group-hover:scale-105 transition-transform duration-700"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20" />
-
-            {/* Aperture Lens Badge & Live Time Overlay */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white space-y-1">
-              <span className="text-[10px] font-mono tracking-[0.2em] uppercase text-white/90 drop-shadow-md font-bold">
-                {formattedTime}
-              </span>
-              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-md border border-white/20 text-[9px] font-mono text-emerald-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                <span>LIVE SHOOT CLOCK</span>
+          {/* Top Circular Aperture Portal showing either Luxury Analog Face or Background Foliage */}
+          <div className="w-48 h-48 sm:w-56 sm:h-56 rounded-full border-2 border-white/30 overflow-hidden shadow-[inset_0_4px_25px_rgba(0,0,0,0.8),0_12px_30px_rgba(0,0,0,0.7)] relative my-2 flex items-center justify-center shrink-0 group-hover:border-gold-400/40 transition-all duration-500 bg-black/80">
+            {clockVisualMode === 'analog' ? (
+              /* LUXURY ANALOG CHRONOMETER IN APERTURE PORTAL */
+              <div className="flex flex-col items-center justify-center p-2">
+                <LuxuryAnalogClock 
+                  time={time} 
+                  size={195} 
+                  isSynced={isSynced} 
+                  isSyncing={isSyncing} 
+                  isGlowing={hasActiveGlow}
+                  activeAlarmTitle={activeTriggeredAlarms[0]?.projectTitle}
+                  alarmMarkers={alarmMarkers}
+                  onClick={() => setShowHorologyModal(true)} 
+                />
               </div>
-            </div>
+            ) : (
+              /* DIGITAL OVERLAY ON BACKGROUND FOLIAGE */
+              <>
+                <img 
+                  src="https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=600&q=80" 
+                  alt="Forest Canopy" 
+                  className="w-full h-full object-cover filter contrast-125 brightness-50 group-hover:scale-105 transition-transform duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/70" />
+
+                {/* Aperture Lens Badge & Live Time Overlay */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-2 text-center">
+                  <button 
+                    type="button"
+                    onClick={() => syncNow()}
+                    className="flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 hover:border-gold-400/50 text-[9px] font-mono text-emerald-300 font-semibold tracking-wider mb-1 cursor-pointer transition-all"
+                    title={`Cloud Firestore TrueTime (${isSynced ? 'Synced' : 'Connecting'} • Offset: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms, Ping: ${latencyMs}ms). Click to resync.`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-spin' : isSynced ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-400'}`} />
+                    <span>{isSyncing ? 'SYNCING...' : isSynced ? 'CLOUD TRUE-TIME' : 'LIVE CLOCK'}</span>
+                  </button>
+
+                  {/* Big, High-Contrast Digital Time */}
+                  <div className="flex items-baseline justify-center space-x-0.5 font-mono text-white drop-shadow-[0_4px_16px_rgba(0,0,0,1)] my-1">
+                    <span className="text-4xl sm:text-5xl font-black tracking-tight text-white drop-shadow-[0_2px_10px_rgba(255,255,255,0.3)]">
+                      {hoursStr}:{minutesStr}
+                    </span>
+                    <span className="text-base sm:text-lg font-bold text-gold-400 font-mono ml-0.5">
+                      :{secondsStr}
+                    </span>
+                  </div>
+
+                  {/* AM/PM and Weekday */}
+                  <div className="flex items-center justify-center space-x-2 mt-0.5">
+                    <span className="px-2 py-0.5 rounded-md bg-gold-500/25 border border-gold-400/50 text-[11px] sm:text-xs font-mono font-extrabold text-gold-300 shadow-sm">
+                      {ampm}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-mono text-white/80 uppercase tracking-widest font-medium">
+                      {time.toLocaleDateString('en-US', { weekday: 'short' })}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Sub-label: weather */}
+          {/* Sub-label: weather & clock face toggle */}
           <div className="mt-3 relative z-10 flex items-center space-x-2">
             <span className="text-[11px] font-light tracking-[0.25em] text-white/60 lowercase font-mono">
               weather
@@ -391,8 +694,16 @@ export default function LoginWeatherClockWidget({
             </button>
             <button
               type="button"
+              onClick={() => handleSetClockVisualMode(clockVisualMode === 'analog' ? 'digital' : 'analog')}
+              className="text-gold-400 hover:text-gold-200 text-[10px] font-mono cursor-pointer ml-1 px-1.5 py-0.5 rounded bg-white/5 border border-gold-500/30"
+              title={`Switch to ${clockVisualMode === 'analog' ? 'Digital' : 'Analog'} mode`}
+            >
+              {clockVisualMode === 'analog' ? '◷ Analog' : '12:00 Dig'}
+            </button>
+            <button
+              type="button"
               onClick={() => setLayoutMode('horizontal')}
-              className="text-gold-400 hover:text-gold-200 text-[10px] font-mono cursor-pointer ml-2"
+              className="text-gold-400 hover:text-gold-200 text-[10px] font-mono cursor-pointer ml-1"
               title="Switch to wide horizontal bar"
             >
               ↔ Wide
@@ -602,6 +913,200 @@ export default function LoginWeatherClockWidget({
           </div>
         )}
       </AnimatePresence>
+
+      {/* ================= MASTER STUDIO CHRONOMETER & HOROLOGY MODAL ================= */}
+      <AnimatePresence>
+        {showHorologyModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              className="bg-gradient-to-b from-[#181614] to-[#0c0a09] border-2 border-gold-500/40 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-[0_25px_60px_rgba(0,0,0,0.95)] relative overflow-hidden"
+            >
+              {/* Luxury gold glow top halo */}
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-gold-400 to-transparent" />
+              <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-gold-500/20 pb-4 mb-6">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gold-500/20 border border-gold-400/40 flex items-center justify-center text-gold-300 shadow-inner">
+                    <Compass className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-serif font-bold text-white tracking-wide">
+                      Master Studio Chronometer
+                    </h3>
+                    <p className="text-[10px] sm:text-[11px] font-mono text-gold-400/80">
+                      Cloud Firestore TrueTime Horology & Workstation Sync
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHorologyModal(false)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer border border-white/10"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Center Watchmaker Dial Display */}
+              <div className="flex flex-col items-center justify-center py-3">
+                <div className="relative p-2 rounded-full bg-black/40 border border-gold-500/20 shadow-[0_10px_30px_rgba(0,0,0,0.9)]">
+                  <LuxuryAnalogClock 
+                    time={time} 
+                    size={280} 
+                    isSynced={isSynced} 
+                    isSyncing={isSyncing} 
+                    isGlowing={hasActiveGlow}
+                    activeAlarmTitle={activeTriggeredAlarms[0]?.projectTitle}
+                    alarmMarkers={alarmMarkers}
+                    showDateWindow={true}
+                    showSeconds={true}
+                  />
+                </div>
+
+                {/* Digital Precision Readout underneath dial */}
+                <div className="flex items-baseline space-x-2 mt-4 font-mono">
+                  <span className="text-2xl sm:text-3xl font-black text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">
+                    {hoursStr}:{minutesStr}
+                  </span>
+                  <span className="text-base sm:text-lg font-bold text-gold-400">
+                    :{secondsStr}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-gold-500/20 border border-gold-400/40 text-[11px] font-extrabold text-gold-300">
+                    {ampm}
+                  </span>
+                  <span className="text-xs text-zinc-400 ml-1">
+                    ({time.toISOString().substring(11, 19)} UTC)
+                  </span>
+                </div>
+
+                <div className="text-xs font-mono text-zinc-300 mt-1">
+                  {formattedDate} • {time.toLocaleDateString('en-US', { weekday: 'long' })}
+                </div>
+
+                {/* Deadline Alarms Quick Access Pill inside modal */}
+                <div className="mt-3 flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAlarmsModal(true)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                      hasActiveGlow
+                        ? 'bg-amber-500/30 border-amber-300 text-amber-200 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)]'
+                        : 'bg-gold-500/15 hover:bg-gold-500/25 border-gold-400/40 text-gold-300'
+                    }`}
+                  >
+                    <BellRing className={`w-3.5 h-3.5 ${hasActiveGlow ? 'animate-bounce text-amber-300' : 'text-gold-400'}`} />
+                    <span>
+                      {hasActiveGlow 
+                        ? `Visual Alarm Reached: ${activeTriggeredAlarms[0]?.projectTitle}` 
+                        : `Manage Deadline Visual Alarms (${alarms.filter(a => a.enabled).length} Armed)`}
+                    </span>
+                  </button>
+                  {hasActiveGlow && activeTriggeredAlarms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => dismissAlarm(activeTriggeredAlarms[0]?.id)}
+                      className="px-2 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-[11px] font-mono text-zinc-200 cursor-pointer"
+                    >
+                      Dismiss Glow
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Realtime Telemetry Grid */}
+              <div className="grid grid-cols-2 gap-2.5 my-5">
+                <div className="p-3 rounded-2xl bg-black/50 border border-white/10">
+                  <div className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider">
+                    Workstation Drift Offset
+                  </div>
+                  <div className="flex items-baseline space-x-1 mt-0.5">
+                    <span className={`text-base font-bold font-mono ${Math.abs(offsetMs) < 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {offsetMs >= 0 ? '+' : ''}{offsetMs} ms
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono">from TrueTime</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-black/50 border border-white/10">
+                  <div className="text-[9px] font-mono text-zinc-400 uppercase tracking-wider">
+                    Round-Trip Network Ping
+                  </div>
+                  <div className="flex items-baseline space-x-1 mt-0.5">
+                    <span className="text-base font-bold font-mono text-sky-400">
+                      {latencyMs} ms
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono">latency</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Calibration Actions */}
+              <div className="flex flex-col sm:flex-row items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => syncNow()}
+                  disabled={isSyncing}
+                  className="w-full sm:w-1/2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-gold-500/30 via-gold-400/20 to-amber-500/30 hover:from-gold-500/40 hover:to-amber-500/40 border border-gold-400/60 text-gold-200 text-xs font-mono font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg"
+                >
+                  <Radio className={`w-3.5 h-3.5 text-gold-300 ${isSyncing ? 'animate-spin' : 'animate-pulse'}`} />
+                  <span>{isSyncing ? 'Calibrating...' : 'Force Atomic Sync'}</span>
+                </button>
+
+                <div className="w-full sm:w-1/2 flex items-center p-1 rounded-xl bg-black/60 border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => handleSetClockVisualMode('analog')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center justify-center space-x-1 cursor-pointer ${
+                      clockVisualMode === 'analog'
+                        ? 'bg-gold-500/30 text-gold-200 border border-gold-400/40'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Compass className="w-3 h-3" />
+                    <span>Analog</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetClockVisualMode('digital')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center justify-center space-x-1 cursor-pointer ${
+                      clockVisualMode === 'digital'
+                        ? 'bg-gold-500/30 text-gold-200 border border-gold-400/40'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Clock className="w-3 h-3" />
+                    <span>Digital</span>
+                  </button>
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= PROJECT DEADLINE VISUAL ALARMS MODAL ================= */}
+      <DeadlineAlarmsModal
+        isOpen={showAlarmsModal}
+        onClose={() => setShowAlarmsModal(false)}
+        currentTime={time}
+        alarms={alarms}
+        activeTriggeredAlarms={activeTriggeredAlarms}
+        projects={projects}
+        onAddAlarm={addAlarm}
+        onToggleAlarm={toggleAlarm}
+        onRemoveAlarm={removeAlarm}
+        onDismissAlarm={dismissAlarm}
+        onDismissAllTriggered={dismissAllTriggered}
+        onSnoozeAlarm={snoozeAlarm}
+        onTriggerTestAlarm={triggerTestAlarm}
+      />
     </div>
   );
 }

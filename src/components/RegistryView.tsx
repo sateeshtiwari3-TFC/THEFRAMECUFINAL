@@ -39,7 +39,7 @@ import {
   Square
 } from 'lucide-react';
 import { Project, Studio, Editor, ProjectStatus, ProjectPriority, UserRole, ProjectTemplate } from '../types';
-import { generateUniqueProjectId } from '../utils';
+import { generateUniqueProjectId, MS_PER_DAY } from '../utils';
 import { 
   DEFAULT_BLUEPRINT_TEMPLATES, 
   getTemplatesFromFirestore, 
@@ -561,7 +561,7 @@ export default function RegistryView({
     const end = new Date(endStr);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
     const diffTime = end.getTime() - start.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil(diffTime / MS_PER_DAY);
     return diffDays;
   };
 
@@ -573,7 +573,7 @@ export default function RegistryView({
     today.setHours(0, 0, 0, 0);
     deadline.setHours(0, 0, 0, 0);
     const diffTime = deadline.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil(diffTime / MS_PER_DAY);
     return diffDays;
   };
 

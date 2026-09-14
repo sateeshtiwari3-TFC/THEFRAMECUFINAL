@@ -9,16 +9,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-
-  // In development within AI Studio sandbox, nginx listens on 8080 and reverse proxies to port 3000.
-  // In deployed Cloud Run production, Cloud Run expects the app to listen on process.env.PORT (typically 8080).
-  const isAiStudioSandbox = Boolean(
-    process.env.DEFAULT_APP_PORT || 
-    process.env.NGINX_PORT || 
-    process.env.CONTROL_PLANE_PORT ||
-    process.env.NODE_ENV === "development"
-  );
-  const PORT = isAiStudioSandbox ? 3000 : (Number(process.env.PORT) || 3000);
+  const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
 
@@ -1324,9 +1315,9 @@ As the Financial Operations Director at 'The Frame Cut Studio', evaluate the fin
   });
 
   // Vite middleware for development or static server for production
-  // In development within AI Studio sandbox, we mount Vite middleware
+  // In development, we mount Vite middleware
   // In production (Cloud Run deployment or built server.cjs), we serve pre-built static files from dist
-  const isDev = isAiStudioSandbox && process.env.NODE_ENV !== "production";
+  const isDev = process.env.NODE_ENV !== "production" && !process.argv[1]?.includes("dist");
   if (isDev) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -1337,12 +1328,10 @@ As the Financial Operations Director at 'The Frame Cut Studio', evaluate the fin
   } else {
     const distPath = fs.existsSync(path.join(process.cwd(), "dist", "index.html"))
       ? path.join(process.cwd(), "dist")
-      : (typeof __dirname !== "undefined" && fs.existsSync(path.join(__dirname, "index.html"))
-          ? __dirname
-          : path.join(process.cwd(), "dist"));
+      : process.cwd();
 
     app.use(express.static(distPath));
-    app.use((req, res) => {
+    app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

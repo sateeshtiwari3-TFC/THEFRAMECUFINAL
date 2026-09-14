@@ -33,6 +33,7 @@ import {
 } from 'recharts';
 import { SafeChartContainer } from './common/SafeChartContainer';
 import { Project, ProjectStatus, ProjectPriority } from '../types';
+import { getPriorityConfig, MS_PER_DAY } from '../utils';
 
 interface GanttChartTimelineProps {
   projects: Project[];
@@ -97,7 +98,7 @@ export default function GanttChartTimeline({
       });
     }
 
-    const totalDays = Math.max(1, Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)));
+    const totalDays = Math.max(1, Math.ceil((maxDate.getTime() - minDate.getTime()) / MS_PER_DAY));
     
     return { minDate, maxDate, totalDays, today };
   }, [filteredProjects, timeHorizon]);
@@ -123,10 +124,10 @@ export default function GanttChartTimeline({
   const getGanttPosition = React.useCallback((shootDateStr?: string, deliveryDateStr?: string) => {
     const { minDate, totalDays } = timelineDates;
     const shoot = shootDateStr ? new Date(shootDateStr) : new Date();
-    const delivery = deliveryDateStr ? new Date(deliveryDateStr) : new Date(shoot.getTime() + 15 * 86400000);
+    const delivery = deliveryDateStr ? new Date(deliveryDateStr) : new Date(shoot.getTime() + 15 * MS_PER_DAY);
 
-    const startDiffDays = (shoot.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
-    const durationDays = Math.max(2, (delivery.getTime() - shoot.getTime()) / (1000 * 60 * 60 * 24));
+    const startDiffDays = (shoot.getTime() - minDate.getTime()) / MS_PER_DAY;
+    const durationDays = Math.max(2, (delivery.getTime() - shoot.getTime()) / MS_PER_DAY);
 
     let leftPercent = (startDiffDays / totalDays) * 100;
     let widthPercent = (durationDays / totalDays) * 100;
@@ -152,7 +153,7 @@ export default function GanttChartTimeline({
   const todayPositionPercent = useMemo(() => {
     const { minDate, maxDate, totalDays, today } = timelineDates;
     if (today < minDate || today > maxDate) return null;
-    const diffDays = (today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
+    const diffDays = (today.getTime() - minDate.getTime()) / MS_PER_DAY;
     return ((diffDays / totalDays) * 100).toFixed(2);
   }, [timelineDates]);
 
@@ -166,7 +167,7 @@ export default function GanttChartTimeline({
 
       const shoot = p.shootDate ? new Date(p.shootDate) : new Date();
       const delivery = p.deliveryDate ? new Date(p.deliveryDate) : new Date();
-      const duration = Math.max(1, Math.ceil((delivery.getTime() - shoot.getTime()) / (1000 * 60 * 60 * 24)));
+      const duration = Math.max(1, Math.ceil((delivery.getTime() - shoot.getTime()) / MS_PER_DAY));
 
       return {
         name: p.coupleName.length > 16 ? p.coupleName.substring(0, 16) + '...' : p.coupleName,
@@ -185,37 +186,8 @@ export default function GanttChartTimeline({
     }).slice(0, 15);
   }, [filteredProjects]);
 
-  // Helper color badge for priority
-  const getPriorityBadge = (priority: ProjectPriority) => {
-    switch (priority) {
-      case 'urgent':
-        return { bg: 'bg-red-500/15 border-red-500/30 text-red-400', bar: 'from-red-500 to-rose-600' };
-      case 'high':
-        return { bg: 'bg-amber-500/15 border-amber-500/30 text-amber-300', bar: 'from-amber-500 to-yellow-600' };
-      case 'medium':
-        return { bg: 'bg-sky-500/15 border-sky-500/30 text-sky-300', bar: 'from-sky-500 to-blue-600' };
-      default:
-        return { bg: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300', bar: 'from-emerald-500 to-teal-600' };
-    }
-  };
-
-  // Helper badge for status
-  const getStatusBadge = (status: ProjectStatus) => {
-    switch (status) {
-      case 'editing':
-        return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-      case 'review':
-        return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-      case 'revision':
-        return 'bg-orange-500/20 text-orange-300 border-orange-500/30';
-      case 'rendering':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      case 'delivered':
-        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-      default:
-        return 'bg-slate-700/40 text-slate-300 border-slate-600/30';
-    }
-  };
+  // Priority color styling via shared utility
+  const getPriorityBadge = (priority: ProjectPriority) => getPriorityConfig(priority);
 
   return (
     <div className="space-y-6">
@@ -432,7 +404,6 @@ export default function GanttChartTimeline({
                   filteredProjects.map((project) => {
                     const pos = getGanttPosition(project.shootDate, project.deliveryDate);
                     const pColors = getPriorityBadge(project.priority);
-                    const statusClass = getStatusBadge(project.status);
                     const milestones = project.customMilestones || [];
                     const completedMilestones = milestones.filter(m => m.completed).length;
                     const isHovered = hoveredProjectId === project.id;

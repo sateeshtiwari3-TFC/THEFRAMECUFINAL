@@ -448,3 +448,212 @@ vite-error-overlay,
   opacity: 1 !important;
 }
 
+/* ==========================================================================
+   Mobile Performance & Battery Optimization Engine (@media max-width: 768px)
+   Eliminates mobile GPU bottlenecks, touch scroll jank, and thermal throttling
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* 1. Disable expensive multi-pass Gaussian backdrop-filters on smartphones */
+  *,
+  *::before,
+  *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* 2. Provide crisp, solid dark surface backgrounds without blur calculation overhead */
+  .glass-panel {
+    background: rgba(22, 26, 33, 0.98) !important;
+    border-color: rgba(212, 175, 55, 0.2) !important;
+  }
+
+  [class*="backdrop-blur"] {
+    background-color: rgba(17, 20, 26, 0.97) !important;
+  }
+
+  /* 3. Native hardware-accelerated momentum touch scrolling */
+  html, body {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  /* 4. Flatten deep box shadows to eliminate compositing layers */
+  .gold-glow,
+  .green-glow,
+  .leaf-border-glow:hover,
+  .glass-panel-hover:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+    transform: none !important;
+  }
+
+  /* 5. Skip rendering offscreen card DOM trees until scrolled into view */
+  .project-card-item,
+  .mobile-optimized-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 240px;
+  }
+}
+
+/* ==========================================================================
+   Standardized Project Status Color-Coding System
+   Provides instant visual context across Grid, List, Kanban, Detail & Dashboard views
+   Key Target States:
+     - Data Received: Cool Ingest Sky / Cyan (#38bdf8 / #0ea5e9)
+     - Editing: Active Production Amber / Warm Gold (#fbbf24 / #f59e0b)
+     - Review: Quality Assurance Violet / Purple (#c084fc / #a855f7)
+     - Closed: Cold Storage Settled Steel / Slate (#94a3b8 / #64748b)
+   ========================================================================== */
+
+/* 1. DATA RECEIVED (Raw Media Ingest, Drive Verification) */
+.status-badge-data_received,
+.status-badge-data-received,
+.status-badge-received {
+  background-color: rgba(14, 165, 233, 0.16) !important;
+  color: #7dd3fc !important;
+  border-color: rgba(56, 189, 248, 0.38) !important;
+  box-shadow: 0 0 10px rgba(14, 165, 233, 0.12);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-data_received:hover,
+.status-badge-data-received:hover,
+.status-badge-received:hover {
+  background-color: rgba(14, 165, 233, 0.25) !important;
+  border-color: rgba(56, 189, 248, 0.6) !important;
+  color: #bae6fd !important;
+  box-shadow: 0 0 14px rgba(14, 165, 233, 0.22);
+}
+.status-dot-data_received,
+.status-dot-data-received,
+.status-dot-received {
+  background-color: #38bdf8 !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.85) !important;
+}
+
+/* 2. EDITING (Active Assembly, Timeline Cutting & Grading) */
+.status-badge-editing,
+.status-badge-in_progress {
+  background-color: rgba(245, 158, 11, 0.18) !important;
+  color: #fcd34d !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.16);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-editing:hover,
+.status-badge-in_progress:hover {
+  background-color: rgba(245, 158, 11, 0.28) !important;
+  border-color: rgba(251, 191, 36, 0.7) !important;
+  color: #fef08a !important;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.28);
+}
+.status-dot-editing,
+.status-dot-in_progress {
+  background-color: #fbbf24 !important;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.9) !important;
+}
+
+/* 3. REVIEW (Internal QA, Senior Evaluation, Client Draft Preview) */
+.status-badge-review {
+  background-color: rgba(168, 85, 247, 0.16) !important;
+  color: #d8b4fe !important;
+  border-color: rgba(192, 132, 252, 0.42) !important;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.14);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-review:hover {
+  background-color: rgba(168, 85, 247, 0.26) !important;
+  border-color: rgba(192, 132, 252, 0.65) !important;
+  color: #f3e8ff !important;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.24);
+}
+.status-dot-review {
+  background-color: #c084fc !important;
+  box-shadow: 0 0 8px rgba(192, 132, 252, 0.85) !important;
+}
+
+/* 4. CLOSED (Settled Payments & Cold Storage Archived) */
+.status-badge-closed {
+  background-color: rgba(71, 85, 105, 0.24) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  box-shadow: 0 0 6px rgba(71, 85, 105, 0.1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-closed:hover {
+  background-color: rgba(71, 85, 105, 0.35) !important;
+  border-color: rgba(148, 163, 184, 0.6) !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 0 10px rgba(71, 85, 105, 0.2);
+}
+.status-dot-closed {
+  background-color: #94a3b8 !important;
+  box-shadow: 0 0 6px rgba(148, 163, 184, 0.5) !important;
+}
+
+/* Pipeline States: Assigned, Revision, Rendering, Delivered */
+.status-badge-assigned {
+  background-color: rgba(99, 102, 241, 0.16) !important;
+  color: #a5b4fc !important;
+  border-color: rgba(129, 140, 248, 0.4) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-assigned:hover {
+  background-color: rgba(99, 102, 241, 0.26) !important;
+  border-color: rgba(129, 140, 248, 0.65) !important;
+}
+.status-dot-assigned {
+  background-color: #818cf8 !important;
+  box-shadow: 0 0 8px rgba(129, 140, 248, 0.8) !important;
+}
+
+.status-badge-revision {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+  color: #fda4af !important;
+  border-color: rgba(251, 113, 133, 0.4) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-revision:hover {
+  background-color: rgba(244, 63, 94, 0.26) !important;
+  border-color: rgba(251, 113, 133, 0.65) !important;
+}
+.status-dot-revision {
+  background-color: #fb7185 !important;
+  box-shadow: 0 0 8px rgba(251, 113, 133, 0.8) !important;
+}
+
+.status-badge-rendering {
+  background-color: rgba(20, 184, 166, 0.16) !important;
+  color: #5eead4 !important;
+  border-color: rgba(45, 212, 191, 0.4) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-rendering:hover {
+  background-color: rgba(20, 184, 166, 0.26) !important;
+  border-color: rgba(45, 212, 191, 0.65) !important;
+}
+.status-dot-rendering {
+  background-color: #2dd4bf !important;
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.8) !important;
+}
+
+.status-badge-delivered,
+.status-badge-completed {
+  background-color: rgba(16, 185, 129, 0.18) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(52, 211, 153, 0.45) !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.15);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.status-badge-delivered:hover,
+.status-badge-completed:hover {
+  background-color: rgba(16, 185, 129, 0.28) !important;
+  border-color: rgba(52, 211, 153, 0.7) !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);
+}
+.status-dot-delivered,
+.status-dot-completed {
+  background-color: #34d399 !important;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.8) !important;
+}
+
+

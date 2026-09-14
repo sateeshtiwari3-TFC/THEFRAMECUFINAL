@@ -1,6 +1,6 @@
 {
   "name": "The Frame Cut Studio",
   "description": "Premium Wedding Video Editing Management System (ERP) with Gemini AI Wedding Creative Tools, soundtrack curation, and social reels generator.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["geolocation", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

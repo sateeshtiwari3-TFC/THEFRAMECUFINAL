@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, Editor, Studio, ProjectStatus } from '../../types';
+import { formatINR, MS_PER_DAY } from '../../utils';
 import ProjectStatusBadge from './ProjectStatusBadge';
 
 interface CriticalDeadlinesWidgetProps {
@@ -94,7 +95,7 @@ export default function CriticalDeadlinesWidget({
 
       const diffMs = deadlineTimestamp - nowTime;
       const diffHours = Math.round(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      const diffDays = Math.ceil(diffMs / MS_PER_DAY);
 
       // We focus on projects due within next 48 hours or overdue
       if (diffHours <= 48) {
@@ -401,7 +402,7 @@ export default function CriticalDeadlinesWidget({
           <span className="text-[10px] text-gold-400/90 uppercase tracking-wider block">💰 Contract Value At Risk</span>
           <div className="flex items-baseline space-x-2 mt-1">
             <span className="text-lg font-bold text-gold-300 font-mono">
-              ₹{stats.totalAtRiskValue.toLocaleString('en-IN')}
+              {formatINR(stats.totalAtRiskValue)}
             </span>
           </div>
         </div>
@@ -410,7 +411,7 @@ export default function CriticalDeadlinesWidget({
           <span className="text-[10px] text-emerald-400/90 uppercase tracking-wider block">Pending Receivables</span>
           <div className="flex items-baseline space-x-2 mt-1">
             <span className="text-lg font-bold text-emerald-400 font-mono">
-              ₹{stats.totalPendingReceivables.toLocaleString('en-IN')}
+              {formatINR(stats.totalPendingReceivables)}
             </span>
           </div>
         </div>
@@ -535,7 +536,7 @@ export default function CriticalDeadlinesWidget({
                           </span>
 
                           <span className="text-emerald-400 font-semibold shrink-0">
-                            ₹{pAmt.toLocaleString('en-IN')} {pendingAmt > 0 ? `(₹${pendingAmt.toLocaleString('en-IN')} Due)` : '(Paid)'}
+                            {formatINR(pAmt)} {pendingAmt > 0 ? `(${formatINR(pendingAmt)} Due)` : '(Paid)'}
                           </span>
                         </div>
                       </div>

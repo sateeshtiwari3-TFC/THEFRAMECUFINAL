@@ -93,6 +93,39 @@ export interface Project {
     completed: boolean;
     completedAt?: string;
   }[];
+
+  // SAP QM Quality Management fields
+  qcStatus?: 'pending' | 'in_progress' | 'passed' | 'revision_needed';
+  qcCheckedAt?: string;
+  qcCheckedBy?: string;
+  qcScore?: number;
+  qcTotal?: number;
+  qcNotes?: string;
+  qcItems?: QcCheckItem[];
+
+  // Supabase Reference Photos
+  referencePhotos?: ProjectReferencePhoto[];
+}
+
+export interface ProjectReferencePhoto {
+  id: string;
+  url: string;
+  name?: string;
+  caption?: string;
+  uploadedAt: string;
+  storagePath?: string;
+  storageProvider?: 'supabase' | 'local' | 'data';
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface QcCheckItem {
+  id: string;
+  label: string;
+  description?: string;
+  checked: boolean;
+  category: 'metadata' | 'audio' | 'color' | 'editorial' | 'export';
 }
 
 export interface Task {
@@ -183,13 +216,45 @@ export interface Editor {
   showcaseShots?: EditorShowcaseShot[];
 }
 
+export interface GettingStartedLink {
+  label: string;
+  actionTab?: string;
+  url?: string;
+  description?: string;
+  icon?: string;
+}
+
+export interface PlatformDocSection {
+  id: string;
+  title: string;
+  category: 'workflow' | 'specifications' | 'guidelines' | 'faq';
+  summary: string;
+  details: string[];
+  badge?: string;
+}
+
+export interface SetupTipItem {
+  step: number;
+  title: string;
+  description: string;
+  highlight?: string;
+  completed?: boolean;
+}
+
 export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  type: 'delivery_tomorrow' | 'payment_pending' | 'project_completed' | 'new_assignment' | 'revision_request';
+  type: 'delivery_tomorrow' | 'payment_pending' | 'project_completed' | 'new_assignment' | 'revision_request' | 'welcome' | string;
   projectId?: string;
   studioId?: string;
+  editorId?: string;
+  recipientId?: string;
+  recipientRole?: 'admin' | 'editor' | 'studio' | 'all';
+  gettingStartedLinks?: GettingStartedLink[];
+  documentationSections?: PlatformDocSection[];
+  tips?: string[];
+  setupTips?: SetupTipItem[];
   calendarEventId?: string;
   isAutomated?: boolean;
   read: boolean;

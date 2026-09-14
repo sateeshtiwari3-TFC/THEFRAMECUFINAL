@@ -20,6 +20,7 @@ interface SwipeableCardProps {
   layout?: boolean | 'position' | 'size';
   layoutId?: string;
   transition?: any;
+  enableCardDrag?: boolean;
 }
 
 export default function SwipeableCard({
@@ -38,7 +39,8 @@ export default function SwipeableCard({
   containerClassName = "",
   layout,
   layoutId,
-  transition
+  transition,
+  enableCardDrag
 }: SwipeableCardProps) {
   const [dragProgress, setDragProgress] = useState(0); // -1 to 1 representing left/right swipe progress
   const [isTouch, setIsTouch] = useState(false);
@@ -46,6 +48,9 @@ export default function SwipeableCard({
   useEffect(() => {
     setIsTouch(window.matchMedia('(pointer: coarse)').matches);
   }, []);
+
+  // On touch/mobile devices, let view-level horizontal swipe gestures handle tab switching without card drag trapping touches
+  const shouldDragCard = enableCardDrag !== undefined ? enableCardDrag : false;
 
   const swipeThreshold = 130;
 
@@ -59,51 +64,48 @@ export default function SwipeableCard({
       }}
       className={`relative overflow-hidden rounded-3xl ${containerClassName}`}
     >
-      {/* Background Actions Layer (revealed on drag) */}
-      <div className="absolute inset-0 z-0 flex items-center justify-between px-6 rounded-3xl select-none pointer-events-none">
-        
-        {/* Left Side Action (Visible when dragging Right) */}
-        <div 
-          className={`flex items-center space-x-2.5 py-2 px-4 rounded-xl border transition-all duration-200 ${leftBgColor} ${leftColor}`}
-          style={{
-            opacity: dragProgress > 0 ? Math.min(dragProgress * 1.5, 1) : 0,
-            transform: `scale(${dragProgress > 0 ? 0.8 + dragProgress * 0.2 : 0.8})`,
-          }}
-        >
-          <Archive className="w-4 h-4" />
-          <span className="text-[10px] font-mono font-bold uppercase tracking-widest">{leftLabel}</span>
-        </div>
+      {/* Background Actions Layer (revealed only if card drag is enabled) */}
+      {shouldDragCard && (
+        <div className="absolute inset-0 z-0 flex items-center justify-between px-6 rounded-3xl select-none pointer-events-none">
+          {/* Left Side Action (Visible when dragging Right) */}
+          <div 
+            className={`flex items-center space-x-2.5 py-2 px-4 rounded-xl border transition-all duration-200 ${leftBgColor} ${leftColor}`}
+            style={{
+              opacity: dragProgress > 0 ? Math.min(dragProgress * 1.5, 1) : 0,
+              transform: `scale(${dragProgress > 0 ? 0.8 + dragProgress * 0.2 : 0.8})`,
+            }}
+          >
+            <Archive className="w-4 h-4" />
+            <span className="text-[10px] font-mono font-bold uppercase tracking-widest">{leftLabel}</span>
+          </div>
 
-        {/* Right Side Action (Visible when dragging Left) */}
-        <div 
-          className={`flex items-center space-x-2.5 py-2 px-4 rounded-xl border transition-all duration-200 ${rightBgColor} ${rightColor}`}
-          style={{
-            opacity: dragProgress < 0 ? Math.min(Math.abs(dragProgress) * 1.5, 1) : 0,
-            transform: `scale(${dragProgress < 0 ? 0.8 + Math.abs(dragProgress) * 0.2 : 0.8})`,
-          }}
-        >
-          <span className="text-[10px] font-mono font-bold uppercase tracking-widest">{rightLabel}</span>
-          <Trash2 className="w-4 h-4" />
+          {/* Right Side Action (Visible when dragging Left) */}
+          <div 
+            className={`flex items-center space-x-2.5 py-2 px-4 rounded-xl border transition-all duration-200 ${rightBgColor} ${rightColor}`}
+            style={{
+              opacity: dragProgress < 0 ? Math.min(Math.abs(dragProgress) * 1.5, 1) : 0,
+              transform: `scale(${dragProgress < 0 ? 0.8 + Math.abs(dragProgress) * 0.2 : 0.8})`,
+            }}
+          >
+            <span className="text-[10px] font-mono font-bold uppercase tracking-widest">{rightLabel}</span>
+            <Trash2 className="w-4 h-4" />
+          </div>
         </div>
-      </div>
-
-      {/* Touch device indicator (subtle bar at bottom to show it is draggable) */}
-      {isTouch && (
-        <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-gray-500/20 z-20 pointer-events-none" />
       )}
 
-      {/* Foreground Draggable Card */}
+      {/* Foreground Card */}
       <motion.div
-        drag="x"
-        dragDirectionLock
+        drag={shouldDragCard ? "x" : false}
+        dragDirectionLock={shouldDragCard}
         dragConstraints={{ left: 0, right: 0 }}
         dragElastic={{ left: 0.6, right: 0.6 }}
         onDrag={(event, info) => {
-          // Normalize progress based on threshold
+          if (!shouldDragCard) return;
           const progress = info.offset.x / swipeThreshold;
           setDragProgress(Math.max(-1.2, Math.min(1.2, progress)));
         }}
         onDragEnd={async (event, info) => {
+          if (!shouldDragCard) return;
           setDragProgress(0);
           if (info.offset.x > swipeThreshold && onSwipeRight) {
             await onSwipeRight();
@@ -115,8 +117,8 @@ export default function SwipeableCard({
           if (onTap) onTap();
         }}
         className={`relative z-10 select-none ${className}`}
-        style={{ x: 0 }}
-        whileTap={isTouch ? { scale: 0.98 } : undefined}
+        style={shouldDragCard ? { x: 0, touchAction: 'pan-y' } : undefined}
+        whileTap={isTouch ? { scale: 0.985 } : undefined}
       >
         {children}
       </motion.div>

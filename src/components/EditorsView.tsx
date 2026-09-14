@@ -47,6 +47,7 @@ import EditorLoadIndicator, { calculateEditorLoad } from './EditorLoadIndicator'
 import EditorPdfExportModal from './EditorPdfExportModal';
 import EditorInvoicesHub from './EditorInvoicesHub';
 import QuickReassignModal from './QuickReassignModal';
+import { MS_PER_DAY } from '../utils';
 
 interface EditorsViewProps {
   editors: Editor[];
@@ -511,7 +512,7 @@ const EditorsView = React.memo(function EditorsView({
     const target = new Date(deliveryDateStr);
     target.setHours(0, 0, 0, 0);
     const diffTime = target.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil(diffTime / MS_PER_DAY);
     
     if (diffDays < 0) {
       return { label: `Overdue by ${Math.abs(diffDays)}d`, urgency: 'overdue' as const, days: diffDays };

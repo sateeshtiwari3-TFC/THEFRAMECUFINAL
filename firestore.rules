@@ -84,6 +84,11 @@ service cloud.firestore {
     match /automation_rules/{ruleId} {
       allow read, write: if true;
     }
+
+    // Master studio time synchronization & workstation heartbeat
+    match /system_sync/{syncId} {
+      allow read, write: if true;
+    }
   }
 }
 

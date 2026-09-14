@@ -1,4 +1,5 @@
 import { supabase, SUPABASE_STORAGE_BUCKET } from '../lib/supabaseClient';
+import { ProjectReferencePhoto } from '../types';
 
 /**
  * Client service for image/media uploads and database synchronization
@@ -105,6 +106,117 @@ export async function uploadImageToSupabase(
       success: false,
       url: '',
       error: err.message || 'Failed to upload image to Supabase',
+    };
+  }
+}
+
+/**
+ * Upload a reference photo (camera snapshot, mobile photo, or reference asset) directly to Supabase storage.
+ * Stores in the bucket under `projects/{projectId}/references/{timestamp}_{filename}`.
+ */
+export async function uploadProjectReferencePhoto(
+  projectId: string,
+  source: File | Blob | string,
+  fileName?: string,
+  caption?: string,
+  bucketName: string = SUPABASE_STORAGE_BUCKET
+): Promise<{ success: boolean; photo?: ProjectReferencePhoto; error?: string }> {
+  try {
+    let blob: Blob;
+    let mimeType = 'image/jpeg';
+    let originalName = fileName || `reference-${Date.now()}.jpg`;
+    let sizeBytes = 0;
+
+    if (typeof source === 'string') {
+      blob = base64ToBlob(source);
+      mimeType = blob.type || 'image/jpeg';
+      sizeBytes = blob.size;
+    } else if (source instanceof File) {
+      blob = source;
+      mimeType = source.type || 'image/jpeg';
+      originalName = fileName || source.name;
+      sizeBytes = source.size;
+    } else {
+      blob = source;
+      mimeType = source.type || 'image/jpeg';
+      sizeBytes = source.size;
+    }
+
+    const extension = mimeType.split('/')[1] || 'jpg';
+    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `projects/${projectId}/references/${Date.now()}_${safeName}`;
+
+    // Upload using Supabase Storage Client
+    const { error: uploadError } = await supabase.storage
+      .from(bucketName)
+      .upload(storagePath, blob, {
+        contentType: mimeType,
+        upsert: true,
+      });
+
+    let publicUrl = '';
+    let storageProvider: 'supabase' | 'local' | 'data' = 'supabase';
+
+    if (uploadError) {
+      console.warn('Direct Supabase client upload failed, attempting backend fallback:', uploadError);
+      let base64Data = '';
+      if (typeof source === 'string') {
+        base64Data = source;
+      } else {
+        base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const fallbackResponse = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: safeName,
+          fileType: mimeType,
+          base64Data,
+          associatedType: 'project_reference',
+          associatedId: projectId,
+        }),
+      });
+
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        publicUrl = fallbackData.url || base64Data;
+      } else {
+        console.warn('Server proxy failed, falling back to data URI');
+        publicUrl = base64Data;
+        storageProvider = 'data';
+      }
+    } else {
+      const { data: publicUrlData } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(storagePath);
+      publicUrl = publicUrlData?.publicUrl || '';
+    }
+
+    const photo: ProjectReferencePhoto = {
+      id: `ref-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      url: publicUrl,
+      name: originalName,
+      caption: caption || '',
+      uploadedAt: new Date().toISOString(),
+      storagePath: storageProvider === 'supabase' ? storagePath : undefined,
+      storageProvider,
+      sizeBytes,
+    };
+
+    return {
+      success: true,
+      photo,
+    };
+  } catch (err: any) {
+    console.error('Error in uploadProjectReferencePhoto:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to upload reference photo',
     };
   }
 }

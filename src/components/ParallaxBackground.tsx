@@ -2,6 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { motion, useSpring, useMotionValue } from 'motion/react';
 
 export const ParallaxBackground: React.FC = () => {
+  // Check if mobile or touch screen to completely skip heavy GPU blur and spring physics
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768 || ('ontouchstart' in window && window.innerWidth < 1024);
+  });
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768 || ('ontouchstart' in window && window.innerWidth < 1024));
+    };
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   const scrollY = useMotionValue(0);
@@ -18,6 +32,8 @@ export const ParallaxBackground: React.FC = () => {
   });
 
   useEffect(() => {
+    if (isMobile) return;
+
     const handleResize = () => {
       setWindowDimensions({
         width: window.innerWidth,
@@ -46,7 +62,7 @@ export const ParallaxBackground: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [mouseX, mouseY, scrollY]);
+  }, [isMobile, mouseX, mouseY, scrollY]);
 
   // Derived parallax offset values for multi-layered depth
   const orb1X = useMotionValue(0);
@@ -57,6 +73,8 @@ export const ParallaxBackground: React.FC = () => {
   const orb3Y = useMotionValue(0);
 
   useEffect(() => {
+    if (isMobile) return;
+
     const unsubscribeX = smoothMouseX.on('change', (latest) => {
       orb1X.set(latest * 80);
       orb2X.set(latest * -120);
@@ -72,7 +90,17 @@ export const ParallaxBackground: React.FC = () => {
       unsubscribeX();
       unsubscribeY();
     };
-  }, [smoothMouseX, smoothMouseY, orb1X, orb1Y, orb2X, orb2Y, orb3X, orb3Y]);
+  }, [isMobile, smoothMouseX, smoothMouseY, orb1X, orb1Y, orb2X, orb2Y, orb3X, orb3Y]);
+
+  // On mobile, render a static, zero-cost lightweight subtle gradient background without any blurs or animations
+  if (isMobile) {
+    return (
+      <div 
+        className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none bg-gradient-to-b from-charcoal-950 via-[#0a0d12] to-charcoal-950" 
+        aria-hidden="true" 
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">

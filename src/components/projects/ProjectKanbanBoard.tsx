@@ -24,6 +24,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, Studio, Editor, Revision, UserRole, ProjectStatus } from '../../types';
+import ProjectUrgencyBadge, { calculateUrgency } from './ProjectUrgencyBadge';
+import ProjectStatusBadge from '../ProjectStatusBadge';
+import NewBadge from '../common/NewBadge';
+import { LazyImage } from '../common/LazyImage';
 
 interface ProjectKanbanBoardProps {
   projects: Project[];
@@ -125,7 +129,6 @@ export const ProjectKanbanBoard: React.FC<ProjectKanbanBoardProps> = ({
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<string | null>(null);
-  const [quickStatusMenuId, setQuickStatusMenuId] = useState<string | null>(null);
 
   const activeColumns = boardMode === 'compact3' ? COMPACT_3_STAGES : FULL_STAGES;
 
@@ -181,19 +184,6 @@ export const ProjectKanbanBoard: React.FC<ProjectKanbanBoardProps> = ({
       await onUpdateStatus(projectId, targetStatus);
     } catch (err) {
       console.error('Failed to move project status via drag and drop:', err);
-    } finally {
-      setIsUpdatingStatus(null);
-    }
-  };
-
-  // Quick 1-click status switcher
-  const handleQuickStatusSelect = async (projectId: string, newStatus: ProjectStatus) => {
-    setQuickStatusMenuId(null);
-    try {
-      setIsUpdatingStatus(projectId);
-      await onUpdateStatus(projectId, newStatus);
-    } catch (err) {
-      console.error('Failed to update status:', err);
     } finally {
       setIsUpdatingStatus(null);
     }
@@ -358,15 +348,10 @@ export const ProjectKanbanBoard: React.FC<ProjectKanbanBoardProps> = ({
                     const editor = editors.find(e => e.id === proj.assignedEditorId || e.name === proj.assignedEditorName);
                     const studio = studios.find(s => s.id === proj.studioId || s.name === proj.studioName);
 
-                    const now = Date.now();
-                    const deliveryTime = proj.deliveryDate ? new Date(proj.deliveryDate).getTime() : null;
-                    const remainingDays = deliveryTime ? Math.ceil((deliveryTime - now) / (1000 * 3600 * 24)) : null;
-                    const isOverdue = remainingDays !== null && remainingDays < 0 && !['delivered', 'closed'].includes(proj.status);
-                    const isUrgentDue = remainingDays !== null && remainingDays >= 0 && remainingDays <= 2;
+                    const urgency = calculateUrgency(proj.deliveryDate, proj.status);
 
                     const isBeingDragged = draggedProjectId === proj.id;
                     const isUpdating = isUpdatingStatus === proj.id;
-                    const isMenuOpen = quickStatusMenuId === proj.id;
 
                     return (
                       <motion.div
@@ -387,6 +372,12 @@ export const ProjectKanbanBoard: React.FC<ProjectKanbanBoardProps> = ({
                         className={`rounded-2xl border bg-charcoal-950/95 transition-all shadow-md group relative cursor-grab active:cursor-grabbing ${
                           isBeingDragged 
                             ? 'border-gold-400 ring-2 ring-gold-500/50 shadow-2xl opacity-50' 
+                            : urgency.urgencyLevel === 'overdue'
+                            ? 'border-rose-500/50 hover:border-rose-500/80 shadow-[0_0_15px_rgba(244,63,94,0.15)]'
+                            : urgency.urgencyLevel === 'due_today'
+                            ? 'border-red-500/50 hover:border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.15)]'
+                            : urgency.urgencyLevel === 'critical'
+                            ? 'border-amber-500/40 hover:border-amber-500/70'
                             : 'border-luxury-green-800/30 hover:border-gold-500/60 hover:shadow-lg'
                         } ${
                           cardDensity === 'compact' ? 'p-3 space-y-2' : 'p-3.5 space-y-2.5'
@@ -425,10 +416,13 @@ export const ProjectKanbanBoard: React.FC<ProjectKanbanBoardProps> = ({
 
                         {/* Middle Content: Couple & Thumbnail */}
                         <div className="flex items-start gap-2.5">
-                          <img
+                          <LazyImage
                             src={proj.couplePhoto || DEFAULT_COVER_IMAGE}
+                            fallbackSrc={DEFAULT_COVER_IMAGE}
                             alt=""
-                            className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 shrink-0 group-hover:ring-gold-500/50 transition-all cursor-zoom-in"
+                            containerClassName="w-10 h-10 rounded-xl shrink-0 ring-1 ring-white/10 group-hover:ring-gold-500/50 transition-all"
+                            className="w-full h-full object-cover cursor-zoom-in"
+                            rootMargin="100px 0px"
                             onMouseEnter={() => setHoveredPhoto({
                               url: proj.couplePhoto || DEFAULT_COVER_IMAGE,
                               title: proj.coupleName,
@@ -454,71 +448,26 @@ export const ProjectKanbanBoard: React.FC<ProjectKanbanBoardProps> = ({
                         {/* Bottom Row: Deadline + 1-Tap Quick Move Controls */}
                         <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
                           
-                          {/* Remaining Days Badge */}
-                          <div>
-                            {remainingDays !== null ? (
-                              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                                isOverdue 
-                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse' 
-                                  : isUrgentDue 
-                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
-                                  : 'bg-charcoal-900 text-gray-400 border border-white/5'
-                              }`}>
-                                <Clock className="w-2.5 h-2.5 inline mr-1 -mt-0.5" />
-                                {isOverdue ? `${Math.abs(remainingDays)}d late` : `${remainingDays}d left`}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-mono text-gray-500">No deadline</span>
-                            )}
+                          {/* Urgency Indicator Badge */}
+                          <div className="flex items-center gap-1">
+                            <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
+                            <ProjectUrgencyBadge
+                              deliveryDate={proj.deliveryDate}
+                              status={proj.status}
+                              size="xs"
+                              showDot={true}
+                              showIcon={true}
+                            />
                           </div>
 
-                          {/* Quick Stage Transition Dropdown / Switcher */}
+                          {/* Status Badge with Interactive 1-Tap Stage Switcher */}
                           <div className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setQuickStatusMenuId(isMenuOpen ? null : proj.id)}
-                              className="px-2 py-1 rounded-lg bg-charcoal-900 hover:bg-gold-500/20 border border-white/10 hover:border-gold-500/40 text-[10px] font-mono text-gray-300 hover:text-gold-300 flex items-center gap-1 transition-all cursor-pointer"
-                              title="1-Tap Stage Switcher"
-                            >
-                              <span className="capitalize">{proj.status.replace('_', ' ')}</span>
-                              <ChevronDown className="w-2.5 h-2.5" />
-                            </button>
-
-                            {/* Popup Stage Jumper Menu */}
-                            {isMenuOpen && (
-                              <div className="absolute right-0 bottom-full mb-1 w-44 bg-charcoal-950 border border-gold-500/40 rounded-xl p-1 shadow-2xl z-30 space-y-0.5">
-                                <div className="px-2 py-1 text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider border-b border-white/5">
-                                  Move Film To:
-                                </div>
-                                {COMPACT_3_STAGES.map(s => (
-                                  <button
-                                    key={s.id}
-                                    type="button"
-                                    onClick={() => handleQuickStatusSelect(proj.id, s.id)}
-                                    className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-mono flex items-center justify-between cursor-pointer transition-colors ${
-                                      proj.status === s.id 
-                                        ? 'bg-gold-500/20 text-gold-300 font-bold' 
-                                        : 'text-gray-300 hover:bg-white/10 hover:text-white'
-                                    }`}
-                                  >
-                                    <span>{s.label}</span>
-                                    {proj.status === s.id && <CheckCircle2 className="w-3 h-3 text-gold-400" />}
-                                  </button>
-                                ))}
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStatusSelect(proj.id, 'delivered')}
-                                  className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-mono flex items-center justify-between cursor-pointer transition-colors border-t border-white/5 ${
-                                    proj.status === 'delivered' 
-                                      ? 'bg-emerald-500/20 text-emerald-300 font-bold' 
-                                      : 'text-emerald-400 hover:bg-emerald-500/10'
-                                  }`}
-                                >
-                                  <span>Mark Delivered</span>
-                                  {proj.status === 'delivered' && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                                </button>
-                              </div>
-                            )}
+                            <ProjectStatusBadge
+                              status={proj.status}
+                              variant="interactive"
+                              size="xs"
+                              onStatusChange={(newStatus) => onUpdateStatus(proj.id, newStatus)}
+                            />
                           </div>
 
                           {/* Quick Actions: WhatsApp, Note, Edit, Reset, Delete */}

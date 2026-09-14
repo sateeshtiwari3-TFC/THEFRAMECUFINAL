@@ -2,6 +2,7 @@ import React from 'react';
 import { Calendar, User, Clock, Flame, Zap, Briefcase } from 'lucide-react';
 import { Editor, Project, ProjectStatus, ProjectPriority, UserRole } from '../../types';
 import EditorLoadIndicator, { calculateEditorLoad } from '../EditorLoadIndicator';
+import { MS_PER_DAY } from '../../utils';
 
 interface IntakeTabCrewProps {
   shootDate: string;
@@ -82,7 +83,7 @@ export default function IntakeTabCrew({
     const end = new Date(endStr);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
     const diffTime = end.getTime() - start.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.ceil(diffTime / MS_PER_DAY);
   };
 
   const getDaysToDeadline = (deadlineStr: string) => {
@@ -93,7 +94,7 @@ export default function IntakeTabCrew({
     today.setHours(0, 0, 0, 0);
     deadline.setHours(0, 0, 0, 0);
     const diffTime = deadline.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.ceil(diffTime / MS_PER_DAY);
   };
 
   const daysDifference = getDaysDifference(shootDate, deliveryDate);

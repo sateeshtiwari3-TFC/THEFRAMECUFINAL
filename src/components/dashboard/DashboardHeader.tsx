@@ -14,12 +14,17 @@ import {
   Layers,
   ArrowUpRight,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import LoginWeatherClockWidget from '../LoginWeatherClockWidget';
+import { Project } from '../../types';
+import { formatINR } from '../../utils';
 
 interface DashboardHeaderProps {
   isOnline: boolean;
+  projects?: Project[];
   onOpenPaymentModal: () => void;
   onQuickAction: (tab: string, subAction?: string) => void;
   onTriggerBackup: () => void;
@@ -37,6 +42,7 @@ interface DashboardHeaderProps {
 
 export default function DashboardHeader({
   isOnline,
+  projects = [],
   onOpenPaymentModal,
   onQuickAction,
   onTriggerBackup,
@@ -51,6 +57,7 @@ export default function DashboardHeader({
   unpaidEditorsCount = 0,
   onSelectPerspective
 }: DashboardHeaderProps) {
+  const [isMobileExpanded, setIsMobileExpanded] = React.useState(false);
   const hasCriticalDeadlines = overdueDeadlinesCount > 0 || criticalDeadlinesCount > 0;
   const hasPendingPayments = totalOutstandingBalance > 0 || unpaidEditorsCount > 0;
 
@@ -76,7 +83,7 @@ export default function DashboardHeader({
     }
   };
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0c1411] via-[#070d0b] to-[#040605] border border-gold-500/25 p-6 md:p-8 shadow-2xl space-y-6 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent">
+    <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-[#0c1411] via-[#070d0b] to-[#040605] border border-gold-500/25 p-3.5 sm:p-5 md:p-8 shadow-2xl space-y-3 sm:space-y-4 md:space-y-6 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent">
       
       {/* Decorative ambient illumination & film grain glow */}
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-gold-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -176,36 +183,47 @@ export default function DashboardHeader({
           </button>
         </div>
 
-        {/* Right: Lead Director & Quick Identity */}
-        <div className="flex items-center space-x-3 text-right">
+        {/* Right: Lead Director & Quick Identity + Mobile Accordion Button */}
+        <div className="flex items-center space-x-2 sm:space-x-3 text-right shrink-0">
           <div className="hidden sm:block text-right">
             <span className="text-[10px] font-mono text-zinc-400 block uppercase tracking-wider font-medium">Executive Lead</span>
-            <span className="text-xs font-bold text-gold-300 font-display">Satish Tiwari (Admin)</span>
+            <span className="text-xs font-bold text-gold-300 font-display">Satish Tiwari</span>
           </div>
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-gold-500/30 to-luxury-green-800 border border-gold-500/40 flex items-center justify-center text-gold-300 text-xs font-bold font-mono shadow-md">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-br from-gold-500/30 to-luxury-green-800 border border-gold-500/40 flex items-center justify-center text-gold-300 text-xs font-bold font-mono shadow-md">
             ST
           </div>
+          
+          {/* Mobile Accordion Toggle to avoid giant scrolling */}
+          <button
+            type="button"
+            onClick={() => setIsMobileExpanded(!isMobileExpanded)}
+            className="md:hidden flex items-center gap-1 px-2 py-1 rounded-xl bg-white/[0.05] border border-white/10 text-gold-300 text-[10px] font-mono font-bold hover:bg-white/10 active:scale-95 transition-all"
+            title={isMobileExpanded ? 'Collapse extra tools' : 'Expand full header'}
+          >
+            <span>{isMobileExpanded ? 'Compact' : 'More'}</span>
+            {isMobileExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
         </div>
 
       </div>
 
       {/* ================= HERO TITLE & REALTIME CLOCK INTEGRATION ================= */}
-      <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 min-w-0">
+      <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-6 min-w-0">
         
-        <div className="space-y-2 max-w-2xl min-w-0 w-full">
-          <div className="flex items-center space-x-2 text-xs font-mono text-gold-400 min-w-0">
+        <div className="space-y-1 sm:space-y-2 max-w-2xl min-w-0 w-full">
+          <div className="hidden sm:flex items-center space-x-2 text-xs font-mono text-gold-400 min-w-0">
             <Sparkles className="w-3.5 h-3.5 shrink-0 text-gold-400" />
             <span className="uppercase tracking-wider font-semibold truncate">Master Cinematography Command Center</span>
           </div>
-          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-serif italic text-white tracking-tight leading-tight break-words">
+          <h1 className="text-xl sm:text-3xl lg:text-5xl font-serif italic text-white tracking-tight leading-tight break-words">
             The Frame Cut Studio OS
           </h1>
-          <p className="text-zinc-300 text-xs sm:text-sm font-normal leading-relaxed max-w-xl">
+          <p className={`${isMobileExpanded ? 'block' : 'hidden md:block'} text-zinc-300 text-xs sm:text-sm font-normal leading-relaxed max-w-xl transition-all`}>
             Realtime operations suite for wedding film workflows, studio partner accounts, editor wage allocations, and scheduled balance recoveries.
           </p>
 
           {/* ================= LIVE BLINKING OPERATIONAL REMINDERS STRIP ================= */}
-          <div className="pt-2 flex flex-wrap items-center gap-3 w-full min-w-0">
+          <div className={`${isMobileExpanded ? 'flex' : 'hidden md:flex'} pt-2 flex-wrap items-center gap-3 w-full min-w-0`}>
             
             {/* 1. Project Deadline Reminder Card (Blinking) */}
             <div 
@@ -236,7 +254,7 @@ export default function DashboardHeader({
                   <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${
                     overdueDeadlinesCount > 0 
                       ? 'bg-rose-500/30 text-rose-200 border-rose-500/40 animate-pulse'
-                      : criticalDeadlinesCount > 0
+                      : criticalDeadlinesCount > 0 
                       ? 'bg-amber-500/30 text-amber-200 border-amber-500/40 animate-pulse'
                       : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                   }`}>
@@ -246,7 +264,7 @@ export default function DashboardHeader({
                 <div className="text-xs font-bold font-mono tracking-tight text-white group-hover:text-gold-300 transition-colors truncate max-w-[240px] sm:max-w-[280px]">
                   {overdueDeadlinesCount > 0 
                     ? `🚨 ${overdueDeadlinesCount} Delivery Overdue!`
-                    : criticalDeadlinesCount > 0
+                    : criticalDeadlinesCount > 0 
                     ? `⚡ ${criticalDeadlinesCount} Due in 48h ${nearestDeadlineItem?.coupleName ? `(${nearestDeadlineItem.coupleName})` : ''}`
                     : `🟢 All ${activeProjectsCount} Projects On Schedule`}
                 </div>
@@ -278,7 +296,7 @@ export default function DashboardHeader({
                     Payment Reminder
                   </span>
                   <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border ${
-                    totalOutstandingBalance > 0
+                    totalOutstandingBalance > 0 
                       ? 'bg-amber-500/30 text-amber-200 border-amber-500/40 animate-pulse'
                       : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                   }`}>
@@ -287,7 +305,7 @@ export default function DashboardHeader({
                 </div>
                 <div className="text-xs font-bold font-mono tracking-tight text-white group-hover:text-gold-300 transition-colors truncate max-w-[240px] sm:max-w-[280px]">
                   {totalOutstandingBalance > 0 
-                    ? `💰 ₹${totalOutstandingBalance.toLocaleString('en-IN')} Due (${pendingStudiosWithBalanceCount} Studio${pendingStudiosWithBalanceCount > 1 ? 's' : ''})`
+                    ? `💰 ${formatINR(totalOutstandingBalance)} Due (${pendingStudiosWithBalanceCount} Studio${pendingStudiosWithBalanceCount > 1 ? 's' : ''})`
                     : `🟢 All Studio Dues & Editor Payouts Cleared`}
                 </div>
               </div>
@@ -296,27 +314,27 @@ export default function DashboardHeader({
           </div>
         </div>
 
-        {/* Live Weather & Analog/Digital Realtime Clock */}
-        <div className="w-full lg:w-auto shrink-0 flex items-center justify-center lg:justify-end min-w-0">
-          <LoginWeatherClockWidget layout="horizontal" />
+        {/* Live Weather & Analog/Digital Realtime Clock - Collapsed on mobile to save vertical space */}
+        <div className={`${isMobileExpanded ? 'flex' : 'hidden md:flex'} w-full lg:w-auto shrink-0 items-center justify-center lg:justify-end min-w-0`}>
+          <LoginWeatherClockWidget layout="horizontal" projects={projects} />
         </div>
 
       </div>
 
       {/* ================= QUICK OPERATIONS ACTION DESK ================= */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 pt-5 border-t border-white/[0.08]">
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 pt-3 sm:pt-5 border-t border-white/[0.08]">
         
-        <div className="flex items-center space-x-2 text-xs text-zinc-200 font-mono">
+        <div className="hidden sm:flex items-center space-x-2 text-xs text-zinc-200 font-mono">
           <Zap className="w-4 h-4 text-gold-400" />
           <span className="font-semibold text-white">Instant Actions:</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           
           {/* LEVEL 1: HERO PRIMARY CTA - New Wedding Film */}
           <button
             onClick={() => onQuickAction('projects', 'add_project')}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-gold-400 via-gold-500 to-amber-500 hover:from-gold-300 hover:to-amber-400 text-charcoal-950 font-bold text-xs shadow-lg shadow-gold-500/25 ring-1 ring-gold-300/50 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-4 sm:px-5 py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-gold-400 via-gold-500 to-amber-500 hover:from-gold-300 hover:to-amber-400 text-charcoal-950 font-bold text-xs shadow-lg shadow-gold-500/25 ring-1 ring-gold-300/50 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer min-h-[44px]"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>New Wedding Film</span>
@@ -325,10 +343,10 @@ export default function DashboardHeader({
           {/* LEVEL 2: SECONDARY ACCENT - Record Payment Ledger */}
           <button
             onClick={onOpenPaymentModal}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-gold-500/15 text-gold-300 hover:text-gold-200 border border-gold-500/40 hover:border-gold-400/80 font-semibold text-xs shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer backdrop-blur-md"
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-2xl bg-white/[0.04] hover:bg-gold-500/15 text-gold-300 hover:text-gold-200 border border-gold-500/40 hover:border-gold-400/80 font-semibold text-xs shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer backdrop-blur-md min-h-[44px]"
           >
             <IndianRupee className="w-3.5 h-3.5 text-gold-400" />
-            <span>Record Payment Ledger</span>
+            <span>Record Payment</span>
           </button>
 
           {/* LEVEL 3: UTILITY 1 - 5th WhatsApp Engine */}
@@ -341,16 +359,16 @@ export default function DashboardHeader({
                 onQuickAction('finance');
               }
             }}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-white/[0.03] hover:bg-emerald-950/50 border border-white/[0.08] hover:border-emerald-500/40 text-zinc-300 hover:text-emerald-300 text-xs font-medium hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer backdrop-blur-md"
+            className={`${isMobileExpanded ? 'flex' : 'hidden md:flex'} items-center space-x-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white/[0.03] hover:bg-emerald-950/50 border border-white/[0.08] hover:border-emerald-500/40 text-zinc-300 hover:text-emerald-300 text-xs font-medium hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer backdrop-blur-md min-h-[44px]`}
           >
             <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-            <span>5th WhatsApp Engine</span>
+            <span>5th WhatsApp</span>
           </button>
 
           {/* LEVEL 3: UTILITY 2 - Snapshot Cloud Backup */}
           <button
             onClick={onTriggerBackup}
-            className={`flex items-center space-x-2 px-4 py-2.5 rounded-2xl border text-xs font-medium hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer backdrop-blur-md ${
+            className={`${isMobileExpanded ? 'flex' : 'hidden md:flex'} items-center space-x-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl border text-xs font-medium hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer backdrop-blur-md min-h-[44px] ${
               isBackupRecommended
                 ? 'bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse shadow-lg shadow-amber-500/10'
                 : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white'

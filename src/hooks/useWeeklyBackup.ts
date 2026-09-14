@@ -68,7 +68,11 @@ export function useWeeklyBackup(
 
   useEffect(() => {
     if (currentUser) {
-      checkBackupStatus();
+      // Delay prompt check slightly after login so it never interrupts the login transition
+      const timer = setTimeout(() => {
+        checkBackupStatus();
+      }, 3500);
+      return () => clearTimeout(timer);
     }
   }, [currentUser, checkBackupStatus]);
 

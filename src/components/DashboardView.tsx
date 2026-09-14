@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Project, 
@@ -30,7 +30,7 @@ import {
 import DashboardHeader from './dashboard/DashboardHeader';
 import DashboardReminderAlerts from './dashboard/DashboardReminderAlerts';
 import DashboardKpiGrid from './dashboard/DashboardKpiGrid';
-import DashboardLiveWorkload from './dashboard/DashboardLiveWorkload';
+import DashboardLiveWorkload, { DashboardProjectSort } from './dashboard/DashboardLiveWorkload';
 import DashboardAlertsHub from './dashboard/DashboardAlertsHub';
 import DashboardFinancialCharts from './dashboard/DashboardFinancialCharts';
 import DashboardModals from './dashboard/DashboardModals';
@@ -42,6 +42,7 @@ import RevenueForecastWidget from './RevenueForecastWidget';
 import DashboardVisualStats from './dashboard/DashboardVisualStats';
 import CriticalDeadlinesWidget from './dashboard/CriticalDeadlinesWidget';
 import MonthlyRevenueTrendLineChart from './dashboard/MonthlyRevenueTrendLineChart';
+import ProjectFrequencyHeatmap from './dashboard/ProjectFrequencyHeatmap';
 
 interface DashboardViewProps {
   projects: Project[];
@@ -96,6 +97,20 @@ export default function DashboardView({
   // Perspective Lens Mode (Desktop)
   const [perspectiveMode, setPerspectiveMode] = useState<'mission_control' | 'edit_suite' | 'financials' | 'priority_radar' | 'forecast'>('mission_control');
 
+  // Track viewport width to avoid mounting heavy desktop Recharts/Gantt components on phone browsers
+  const [isMobileScreen, setIsMobileScreen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Mobile Dashboard Tab State (Mobile dedicated sub-views to eliminate excessive scrolling)
   const [mobileTab, setMobileTab] = useState<'overview' | 'radar' | 'workload' | 'cashflow' | 'forecast'>('overview');
 
@@ -131,6 +146,9 @@ export default function DashboardView({
 
   // Inspector modal state
   const [selectedInspectItem, setSelectedInspectItem] = useState<{ type: 'project' | 'studio' | 'editor'; data: any } | null>(null);
+
+  // Production management workflow sorting state
+  const [projectSortOption, setProjectSortOption] = useState<DashboardProjectSort>('deadline');
 
   // 1. Dynamic Calculations: Projects & Pipeline
   const totalProjectsCount = projects.length;
@@ -741,6 +759,7 @@ export default function DashboardView({
       {/* ================= 1. ULTRA-LUXURY EXECUTIVE OS HEADER ================= */}
       <DashboardHeader
         isOnline={isOnline}
+        projects={projects}
         onOpenPaymentModal={() => openPaymentModal('studio')}
         onQuickAction={onQuickAction}
         onTriggerBackup={onTriggerWeeklyBackup || (() => {})}
@@ -765,189 +784,212 @@ export default function DashboardView({
         onOpenPaymentModal={() => openPaymentModal('studio')}
       />
 
-      {/* ================= MOBILE VIEW: DEDICATED TABBED INTERFACE ================= */}
-      {renderMobileTabBar()}
+      {/* ================= MOBILE VIEW: DEDICATED TABBED INTERFACE (ONLY MOUNTED ON PHONES) ================= */}
+      {isMobileScreen && (
+        <>
+          {renderMobileTabBar()}
 
-      <div className="md:hidden">
-        <AnimatePresence mode="wait">
-          {/* MOBILE TAB 1: OVERVIEW */}
-          {mobileTab === 'overview' && (
-            <motion.div
-              key="mobile-overview"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6"
-            >
-              <DashboardKpiGrid
-                totalProjectsCount={totalProjectsCount}
-                completedProjectsCount={completedProjectsCount}
-                pendingProjectsCount={pendingProjectsCount}
-                totalProjectsThisMonthCount={totalProjectsThisMonthCount}
-                completedThisMonthCount={completedThisMonthCount}
-                activeThisMonthCount={activeThisMonthCount}
-                activeProjectsCount={activeProjectsCount}
-                totalRevenue={totalRevenue}
-                totalOutstandingBalance={totalOutstandingBalance}
-                projectsWithOutstandingBalanceCount={projectsWithOutstandingBalanceCount}
-                urgentRevisionPendingCount={urgentRevisionPendingCount}
-                allRevisionsPendingCount={allRevisionsPendingCount}
-                totalExpenses={totalExpenses}
-                manualExpensesTotal={manualExpensesTotal}
-                totalProfit={totalProfit}
-                activeStudiosCount={activeStudiosCount}
-                activeEditorsCount={activeEditorsCount}
-                onNavigateTab={onNavigateTab}
-              />
+          <div className="md:hidden">
+            <AnimatePresence mode="wait">
+              {/* MOBILE TAB 1: OVERVIEW */}
+              {mobileTab === 'overview' && (
+                <motion.div
+                  key="mobile-overview"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  <DashboardKpiGrid
+                    totalProjectsCount={totalProjectsCount}
+                    completedProjectsCount={completedProjectsCount}
+                    pendingProjectsCount={pendingProjectsCount}
+                    totalProjectsThisMonthCount={totalProjectsThisMonthCount}
+                    completedThisMonthCount={completedThisMonthCount}
+                    activeThisMonthCount={activeThisMonthCount}
+                    activeProjectsCount={activeProjectsCount}
+                    totalRevenue={totalRevenue}
+                    totalOutstandingBalance={totalOutstandingBalance}
+                    projectsWithOutstandingBalanceCount={projectsWithOutstandingBalanceCount}
+                    urgentRevisionPendingCount={urgentRevisionPendingCount}
+                    allRevisionsPendingCount={allRevisionsPendingCount}
+                    totalExpenses={totalExpenses}
+                    manualExpensesTotal={manualExpensesTotal}
+                    totalProfit={totalProfit}
+                    activeStudiosCount={activeStudiosCount}
+                    activeEditorsCount={activeEditorsCount}
+                    onNavigateTab={onNavigateTab}
+                  />
 
-              <ProjectHealthSummaryCard
-                projects={projects}
-                studios={studios}
-                editors={editors}
-                payments={payments}
-                onOpenPaymentModal={openPaymentModal}
-                onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
-                onQuickAction={onQuickAction}
-              />
+                  <ProjectHealthSummaryCard
+                    projects={projects}
+                    studios={studios}
+                    editors={editors}
+                    payments={payments}
+                    onOpenPaymentModal={openPaymentModal}
+                    onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+                    onQuickAction={onQuickAction}
+                  />
 
-              <MonthlyRevenueTrendLineChart
-                editorPayments={payments}
-                studioInvoices={invoices}
-                onNavigateTab={onNavigateTab}
-              />
-            </motion.div>
-          )}
+                  <MonthlyRevenueTrendLineChart
+                    editorPayments={payments}
+                    studioInvoices={invoices}
+                    onNavigateTab={onNavigateTab}
+                  />
 
-          {/* MOBILE TAB 2: RADAR (DEADLINES & URGENT) */}
-          {mobileTab === 'radar' && (
-            <motion.div
-              key="mobile-radar"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6"
-            >
-              <CriticalDeadlinesWidget
-                projects={projects}
-                editors={editors}
-                studios={studios}
-                onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
-                onUpdateProject={onUpdateProject}
-                onNavigateTab={onNavigateTab}
-              />
+                  <ProjectFrequencyHeatmap
+                    projects={projects}
+                    studios={studios}
+                    editors={editors}
+                    onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+                    onNavigateTab={onNavigateTab}
+                  />
+                </motion.div>
+              )}
 
-              <DashboardAlertsHub
-                projects={projects}
-                studios={studios}
-                editors={editors}
-                filteredStudioPaymentReminders={studioPaymentRemindersList}
-                filteredPaymentReminders={studioPaymentRemindersList}
-                filteredProjectReminders={projectRemindersList}
-                unpaidEditorsList={unpaidEditorsList}
-                onOpenPaymentModal={openPaymentModal}
-                onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
-                onNavigateTab={onNavigateTab}
-                onTriggerWeeklyBackup={onTriggerWeeklyBackup}
-                isWeeklyBackupDue={isWeeklyBackupDue}
-              />
-            </motion.div>
-          )}
+              {/* MOBILE TAB 2: RADAR (DEADLINES & URGENT) */}
+              {mobileTab === 'radar' && (
+                <motion.div
+                  key="mobile-radar"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  <CriticalDeadlinesWidget
+                    projects={projects}
+                    editors={editors}
+                    studios={studios}
+                    onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+                    onUpdateProject={onUpdateProject}
+                    onNavigateTab={onNavigateTab}
+                  />
 
-          {/* MOBILE TAB 3: WORKLOAD (LIVE PIPELINE) */}
-          {mobileTab === 'workload' && (
-            <motion.div
-              key="mobile-workload"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6"
-            >
-              <DashboardLiveWorkload
-                projects={projects}
-                editors={editors}
-                onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
-                onQuickAction={onQuickAction}
-              />
+                  <DashboardAlertsHub
+                    projects={projects}
+                    studios={studios}
+                    editors={editors}
+                    filteredStudioPaymentReminders={studioPaymentRemindersList}
+                    filteredPaymentReminders={studioPaymentRemindersList}
+                    filteredProjectReminders={projectRemindersList}
+                    unpaidEditorsList={unpaidEditorsList}
+                    onOpenPaymentModal={openPaymentModal}
+                    onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+                    onNavigateTab={onNavigateTab}
+                    onTriggerWeeklyBackup={onTriggerWeeklyBackup}
+                    isWeeklyBackupDue={isWeeklyBackupDue}
+                  />
+                </motion.div>
+              )}
 
-              <DashboardVisualStats
-                projects={projects}
-                onNavigateTab={onNavigateTab}
-              />
-            </motion.div>
-          )}
+              {/* MOBILE TAB 3: WORKLOAD (LIVE PIPELINE) */}
+              {mobileTab === 'workload' && (
+                <motion.div
+                  key="mobile-workload"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  <DashboardLiveWorkload
+                    projects={projects}
+                    editors={editors}
+                    onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+                    onQuickAction={onQuickAction}
+                    sortBy={projectSortOption}
+                    onSortChange={setProjectSortOption}
+                  />
 
-          {/* MOBILE TAB 4: CASHFLOW (DUES & WHATSAPP) */}
-          {mobileTab === 'cashflow' && (
-            <motion.div
-              key="mobile-cashflow"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6"
-            >
-              <DashboardFinancialCharts
-                profitabilityTrendData={profitabilityTrendData}
-                revenueVsExpensesData={revenueVsExpensesData}
-                sparklineData={sparklineData}
-                studioPerformanceData={studioPerformanceData}
-                editorPerformanceData={editorPerformanceData}
-                profitabilitySummary={profitabilitySummary}
-                onNavigateTab={onNavigateTab}
-              />
+                  <ProjectFrequencyHeatmap
+                    projects={projects}
+                    studios={studios}
+                    editors={editors}
+                    onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+                    onNavigateTab={onNavigateTab}
+                  />
 
-              <div id="whatsapp-reminders-section">
-                <MonthlyWhatsAppReminders
-                  projects={projects}
-                  studios={studios}
-                  editors={editors}
-                  payments={payments}
-                />
-              </div>
-            </motion.div>
-          )}
+                  <DashboardVisualStats
+                    projects={projects}
+                    onNavigateTab={onNavigateTab}
+                  />
+                </motion.div>
+              )}
 
-          {/* MOBILE TAB 5: FORECAST & ANALYTICS */}
-          {mobileTab === 'forecast' && (
-            <motion.div
-              key="mobile-forecast"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6"
-            >
-              <RevenueForecastWidget
-                projects={projects}
-                studios={studios}
-                editors={editors}
-              />
+              {/* MOBILE TAB 4: CASHFLOW (DUES & WHATSAPP) */}
+              {mobileTab === 'cashflow' && (
+                <motion.div
+                  key="mobile-cashflow"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  <DashboardFinancialCharts
+                    profitabilityTrendData={profitabilityTrendData}
+                    revenueVsExpensesData={revenueVsExpensesData}
+                    sparklineData={sparklineData}
+                    studioPerformanceData={studioPerformanceData}
+                    editorPerformanceData={editorPerformanceData}
+                    profitabilitySummary={profitabilitySummary}
+                    onNavigateTab={onNavigateTab}
+                  />
 
-              <GanttChartTimeline
-                projects={projects}
-                onSelectProject={(projectId) => {
-                  const p = projects.find(proj => proj.id === projectId);
-                  if (p) setSelectedInspectItem({ type: 'project', data: p });
-                }}
-                onUpdateProject={onUpdateProject}
-              />
+                  <div id="whatsapp-reminders-section">
+                    <MonthlyWhatsAppReminders
+                      projects={projects}
+                      studios={studios}
+                      editors={editors}
+                      payments={payments}
+                    />
+                  </div>
+                </motion.div>
+              )}
 
-              <DashboardRecycleBinWidget
-                recycleBinItems={recycleBinItems}
-                onRestoreItem={onRestoreRecycleBinItem || (async () => {})}
-                onNavigateTab={onNavigateTab || (() => {})}
-                isOrganic={true}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              {/* MOBILE TAB 5: FORECAST & ANALYTICS */}
+              {mobileTab === 'forecast' && (
+                <motion.div
+                  key="mobile-forecast"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6"
+                >
+                  <RevenueForecastWidget
+                    projects={projects}
+                    studios={studios}
+                    editors={editors}
+                  />
 
-      {/* ================= DESKTOP VIEW: FULL EXPANDABLE SUITE ================= */}
-      <div className="hidden md:block space-y-8">
+                  <GanttChartTimeline
+                    projects={projects}
+                    onSelectProject={(projectId) => {
+                      const p = projects.find(proj => proj.id === projectId);
+                      if (p) setSelectedInspectItem({ type: 'project', data: p });
+                    }}
+                    onUpdateProject={onUpdateProject}
+                  />
+
+                  <DashboardRecycleBinWidget
+                    recycleBinItems={recycleBinItems}
+                    onRestoreItem={onRestoreRecycleBinItem || (async () => {})}
+                    onNavigateTab={onNavigateTab || (() => {})}
+                    isOrganic={true}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </>
+      )}
+
+      {/* ================= DESKTOP VIEW: FULL EXPANDABLE SUITE (ONLY MOUNTED ON DESKTOP) ================= */}
+      {!isMobileScreen && (
+        <div className="hidden md:block space-y-8">
         {/* ================= 2. MASTER BENTO KPI GRID (TOP OVERVIEW) ================= */}
         <DashboardKpiGrid
           totalProjectsCount={totalProjectsCount}
@@ -1009,12 +1051,23 @@ export default function DashboardView({
               onNavigateTab={onNavigateTab}
             />
 
+            {/* Project Frequency & Production Load Heatmap */}
+            <ProjectFrequencyHeatmap
+              projects={projects}
+              studios={studios}
+              editors={editors}
+              onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+              onNavigateTab={onNavigateTab}
+            />
+
             {/* Active Editing Pipeline */}
             <DashboardLiveWorkload
               projects={projects}
               editors={editors}
               onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
               onQuickAction={onQuickAction}
+              sortBy={projectSortOption}
+              onSortChange={setProjectSortOption}
             />
 
             {/* Accounts & Production Action Hub */}
@@ -1083,11 +1136,22 @@ export default function DashboardView({
               onNavigateTab={onNavigateTab}
             />
 
+            {/* Project Frequency & Production Load Heatmap */}
+            <ProjectFrequencyHeatmap
+              projects={projects}
+              studios={studios}
+              editors={editors}
+              onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+              onNavigateTab={onNavigateTab}
+            />
+
             <DashboardLiveWorkload
               projects={projects}
               editors={editors}
               onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
               onQuickAction={onQuickAction}
+              sortBy={projectSortOption}
+              onSortChange={setProjectSortOption}
             />
 
             <DashboardVisualStats
@@ -1170,6 +1234,15 @@ export default function DashboardView({
               onNavigateTab={onNavigateTab}
             />
 
+            {/* Project Frequency & Production Load Heatmap */}
+            <ProjectFrequencyHeatmap
+              projects={projects}
+              studios={studios}
+              editors={editors}
+              onInspectProject={(project) => setSelectedInspectItem({ type: 'project', data: project })}
+              onNavigateTab={onNavigateTab}
+            />
+
             <ProjectHealthSummaryCard
               projects={projects}
               studios={studios}
@@ -1227,6 +1300,7 @@ export default function DashboardView({
         {/* ================= STUDIO PERSPECTIVE LENS SWITCHER (BOTTOM) ================= */}
         {renderPerspectiveSwitcher('bottom')}
       </div>
+      )}
 
       {/* ================= TRANSACTION & INSPECTION MODALS ================= */}
       <DashboardModals

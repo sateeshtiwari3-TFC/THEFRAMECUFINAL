@@ -16,17 +16,19 @@ import {
   Tag as TagIcon,
   CheckCircle2,
   Clock,
-  Columns
+  Columns,
+  Calendar
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Studio, ProjectPriority, ProjectStatus, UserRole } from '../../types';
 import { PREDEFINED_PROJECT_TAGS } from '../../projectTags';
+import NewBadge from '../common/NewBadge';
 
 interface ProjectsFilterBarProps {
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  viewMode: 'grid' | 'list' | 'kanban';
-  setViewMode: (mode: 'grid' | 'list' | 'kanban') => void;
+  viewMode: 'grid' | 'list' | 'kanban' | 'timeline';
+  setViewMode: (mode: 'grid' | 'list' | 'kanban' | 'timeline') => void;
   studios: Studio[];
   studioFilter: string;
   setStudioFilter: (studioId: string) => void;
@@ -191,6 +193,21 @@ export const ProjectsFilterBar: React.FC<ProjectsFilterBarProps> = ({
                 <Columns className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Kanban</span>
               </button>
+
+              <button
+                type="button"
+                id="btn-view-timeline"
+                onClick={() => setViewMode('timeline')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                  viewMode === 'timeline'
+                    ? 'bg-gradient-to-r from-gold-500 to-amber-400 text-charcoal-950 shadow-md font-black'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                }`}
+                title="Timeline & Gantt Schedule View"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Timeline</span>
+              </button>
             </div>
 
             {/* Export & Action Buttons */}
@@ -293,19 +310,22 @@ export const ProjectsFilterBar: React.FC<ProjectsFilterBarProps> = ({
               </select>
             </div>
 
-            {/* Deadline Urgency Toggle */}
-            <button
-              type="button"
-              onClick={() => setDeadlineFilter(deadlineFilter === 'due_7_days' ? 'all' : 'due_7_days')}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                deadlineFilter === 'due_7_days'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
-                  : 'bg-charcoal-950 text-gray-400 border-white/5 hover:border-white/20'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>Due ≤ 7 Days</span>
-            </button>
+            {/* Deadline Urgency Filter */}
+            <div className="flex items-center gap-1.5 bg-charcoal-950 px-2.5 py-1.5 rounded-xl border border-white/5">
+              <Clock className={`w-3.5 h-3.5 ${deadlineFilter === 'overdue' ? 'text-rose-400' : deadlineFilter === 'critical' ? 'text-amber-400' : 'text-gold-400'}`} />
+              <select
+                id="urgency-filter-select"
+                value={deadlineFilter}
+                onChange={(e) => setDeadlineFilter(e.target.value)}
+                className="bg-transparent text-gray-200 text-xs focus:outline-none cursor-pointer font-bold"
+              >
+                <option value="all" className="bg-charcoal-900">All Deadlines</option>
+                <option value="overdue" className="bg-charcoal-900">⚠️ Overdue Only</option>
+                <option value="critical" className="bg-charcoal-900">⚡ Critical (≤ 2 Days)</option>
+                <option value="due_7_days" className="bg-charcoal-900">⏳ Due ≤ 7 Days</option>
+              </select>
+              <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
+            </div>
 
             {/* Project Tag Filter */}
             <div className="flex items-center gap-1 bg-charcoal-950 px-2.5 py-1.5 rounded-xl border border-white/5">
@@ -333,6 +353,7 @@ export const ProjectsFilterBar: React.FC<ProjectsFilterBarProps> = ({
                 className="bg-transparent text-gray-200 text-xs focus:outline-none cursor-pointer"
               >
                 <option value="delivery_asc" className="bg-charcoal-900">Deadline: Earliest First</option>
+                <option value="priority_asc" className="bg-charcoal-900">Priority: Urgent First</option>
                 <option value="delivery_desc" className="bg-charcoal-900">Deadline: Furthest</option>
                 <option value="shoot_desc" className="bg-charcoal-900">Shoot Date: Newest</option>
                 <option value="amount_desc" className="bg-charcoal-900">Highest Contract Value</option>

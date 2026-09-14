@@ -43,6 +43,7 @@ import {
 } from 'recharts';
 import { SafeChartContainer } from './common/SafeChartContainer';
 import { Project, Studio, Editor, Expense } from '../types';
+import { MS_PER_DAY } from '../utils';
 
 interface ReportsViewProps {
   projects: Project[];
@@ -230,7 +231,7 @@ export default function ReportsView({ projects, studios, editors, expenses }: Re
 
       if (start && end) {
         const diffMs = end.getTime() - start.getTime();
-        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        const diffDays = Math.ceil(diffMs / MS_PER_DAY);
         if (diffDays > 0) return diffDays;
       }
       return null;

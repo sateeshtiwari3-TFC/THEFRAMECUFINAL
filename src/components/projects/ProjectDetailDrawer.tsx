@@ -25,11 +25,24 @@ import {
   Tag as TagIcon,
   Music,
   Share2,
-  RotateCcw
+  RotateCcw,
+  Volume2,
+  Palette,
+  Film,
+  FileCheck,
+  AlertTriangle,
+  TrendingUp,
+  Check,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Project, Studio, Editor, Revision, UserRole, ProjectStatus, CalendarEvent } from '../../types';
+import { Project, Studio, Editor, Revision, UserRole, ProjectStatus, CalendarEvent, QcCheckItem } from '../../types';
 import { ProjectTagList } from '../ProjectTagBadge';
+import { DEFAULT_QC_ITEMS } from './ProjectQualityControlModal';
+import { ProjectReferencePhotosGallery } from './ProjectReferencePhotosGallery';
+import ProjectUrgencyBadge from './ProjectUrgencyBadge';
+import ProjectStatusBadge, { WORKFLOW_STAGES } from '../ProjectStatusBadge';
+import NewBadge from '../common/NewBadge';
 
 interface ProjectDetailDrawerProps {
   project: Project | null;
@@ -53,18 +66,8 @@ interface ProjectDetailDrawerProps {
   onToggleTag: (projectId: string, tagId: string, e: React.MouseEvent) => void;
   onOpenCreativeTool?: (mode: "soundtrack" | "captions", projectId: string) => void;
   onResetProject?: (project: Project) => void;
+  onOpenQualityControl?: (project: Project) => void;
 }
-
-const WORKFLOW_STAGES: { id: ProjectStatus; label: string; color: string; bg: string }[] = [
-  { id: 'data_received', label: 'Data Received', color: 'text-sky-300', bg: 'bg-sky-500/20 text-sky-300 border-sky-400/30' },
-  { id: 'assigned', label: 'Assigned', color: 'text-indigo-300', bg: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/30' },
-  { id: 'editing', label: 'Editing', color: 'text-amber-300', bg: 'bg-amber-500/25 text-amber-300 border-amber-400/40' },
-  { id: 'review', label: 'Review', color: 'text-purple-300', bg: 'bg-purple-500/20 text-purple-300 border-purple-400/30' },
-  { id: 'revision', label: 'Revision', color: 'text-rose-300', bg: 'bg-rose-500/20 text-rose-300 border-rose-400/40' },
-  { id: 'rendering', label: 'Rendering', color: 'text-teal-300', bg: 'bg-teal-500/20 text-teal-300 border-teal-400/30' },
-  { id: 'delivered', label: 'Delivered', color: 'text-emerald-300', bg: 'bg-emerald-500/25 text-emerald-300 border-emerald-400/40' },
-  { id: 'closed', label: 'Closed', color: 'text-slate-300', bg: 'bg-slate-800/80 text-slate-300 border-slate-700' }
-];
 
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=600';
 
@@ -89,9 +92,10 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
   onOpenQuickNote,
   onToggleTag,
   onOpenCreativeTool,
-  onResetProject
+  onResetProject,
+  onOpenQualityControl
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'financials' | 'storage' | 'revisions' | 'notes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'photos' | 'financials' | 'qc' | 'storage' | 'revisions' | 'notes'>('overview');
   const [newRevisionNote, setNewRevisionNote] = useState('');
   const [isSubmittingRev, setIsSubmittingRev] = useState(false);
 
@@ -105,7 +109,10 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
   const advance = Number(project.advancePayment) || 0;
   const pendingBalance = Math.max(0, amount - advance);
   const editorPayment = Number(project.editorPayment) || 0;
-  const netMargin = Math.max(0, amount - editorPayment);
+  const otherExpenses = Number(project.otherExpenses) || 0;
+  const totalCost = editorPayment + otherExpenses;
+  const netProfit = amount - totalCost;
+  const profitMarginPct = amount > 0 ? Math.round((netProfit / amount) * 100) : 0;
 
   // Delivery countdown
   const now = Date.now();
@@ -194,18 +201,34 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                   <FileDown className="w-3.5 h-3.5" />
                   <span>Worksheet</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('photos')}
+                  className="px-3 py-1.5 rounded-xl bg-charcoal-900/90 hover:bg-charcoal-800 border border-gold-500/40 text-gold-300 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                  title="Camera Reference Photos & Stills"
+                >
+                  <Camera className="w-3.5 h-3.5 text-gold-400" />
+                  <span>{(project.referencePhotos || []).length} Ref Photos</span>
+                </button>
               </div>
             </div>
 
             {/* Bottom Title & Specs */}
             <div className="absolute bottom-4 left-6 right-6">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2.5 py-0.5 rounded-md bg-gold-500/20 text-gold-400 border border-gold-500/40 text-[10px] font-mono font-bold uppercase">
                   {project.id}
                 </span>
                 <span className="text-xs text-gold-300 font-mono font-semibold">
                   {project.studioName || studio?.name || 'Studio Partner'}
                 </span>
+                <ProjectStatusBadge
+                  status={project.status}
+                  size="xs"
+                  showDot={true}
+                  showIcon={true}
+                />
               </div>
               <h2 className="text-xl sm:text-2xl font-bold font-display text-white mt-1">
                 {project.projectName || project.coupleName}
@@ -220,7 +243,19 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
           <div className="px-6 border-b border-white/10 bg-charcoal-950/80 flex items-center gap-2 overflow-x-auto select-none shrink-0 custom-scrollbar">
             {[
               { id: 'overview', label: 'Overview & Specs', icon: Layers },
-              { id: 'financials', label: 'Financial Ledger', icon: Coins },
+              { 
+                id: 'photos', 
+                label: `Reference Photos (${(project.referencePhotos || []).length})`, 
+                icon: Camera,
+                badge: (project.referencePhotos || []).length > 0 ? 'bg-gold-500/20 text-gold-300' : undefined 
+              },
+              { 
+                id: 'qc', 
+                label: project.qcStatus === 'passed' ? 'QC Passed ✓' : 'QC Inspection', 
+                icon: ShieldCheck,
+                badge: project.qcStatus === 'passed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gold-500/20 text-gold-300'
+              },
+              { id: 'financials', label: 'Financial Ledger & Profit', icon: Coins },
               { id: 'storage', label: 'Media & Drives', icon: HardDrive },
               { id: 'revisions', label: `Revisions (${projectRevisions.length})`, icon: History },
               { id: 'notes', label: 'Notes Log', icon: StickyNote }
@@ -239,6 +274,9 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{tab.label}</span>
+                  {tab.id === 'photos' && (
+                    <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
+                  )}
                 </button>
               );
             })}
@@ -254,24 +292,27 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                 {/* Workflow Status Selector */}
                 <div className="p-4 rounded-2xl bg-charcoal-950 border border-luxury-green-800/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
                   <div>
-                    <span className="text-[10px] font-mono text-gray-500 uppercase tracking-wider block mb-1">Current Workflow Stage</span>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-gold-400 animate-ping" />
-                      <span className="text-sm font-bold font-display text-white">
-                        {WORKFLOW_STAGES.find(s => s.id === project.status)?.label || project.status}
-                      </span>
-                    </div>
+                    <span className="text-[10px] font-mono text-gray-500 uppercase tracking-wider block mb-1.5">Current Workflow Stage</span>
+                    <ProjectStatusBadge
+                      status={project.status}
+                      size="md"
+                      showDot={true}
+                      showIcon={true}
+                    />
                   </div>
 
-                  <select
-                    value={project.status}
-                    onChange={(e) => onUpdateProject(project.id, { status: e.target.value as ProjectStatus })}
-                    className="bg-charcoal-900 border border-gold-500/30 px-3.5 py-2 rounded-xl text-xs text-gold-400 font-bold font-mono focus:outline-none cursor-pointer"
-                  >
-                    {WORKFLOW_STAGES.map(s => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-gray-400 hidden sm:inline">Change Stage:</span>
+                    <select
+                      value={project.status}
+                      onChange={(e) => onUpdateProject(project.id, { status: e.target.value as ProjectStatus })}
+                      className="bg-charcoal-900 border border-gold-500/30 px-3.5 py-2 rounded-xl text-xs text-gold-400 font-bold font-mono focus:outline-none cursor-pointer hover:border-gold-400 transition-colors"
+                    >
+                      {WORKFLOW_STAGES.map(s => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* AI Wedding Creative Assistance */}
@@ -327,17 +368,16 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                       <span>Delivery Deadline & Presets</span>
                     </span>
 
-                    {remainingDays !== null && (
-                      <span className={`px-2.5 py-1 rounded-xl text-xs font-mono font-bold border ${
-                        remainingDays < 0
-                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                          : remainingDays <= 3
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                      }`}>
-                        {remainingDays < 0 ? `⚠️ ${Math.abs(remainingDays)}d Overdue` : `${remainingDays} Days Remaining`}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
+                      <ProjectUrgencyBadge
+                        deliveryDate={project.deliveryDate}
+                        status={project.status}
+                        size="sm"
+                        showDot={true}
+                        showIcon={true}
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/5">
@@ -410,10 +450,150 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                   />
                 </div>
 
+                {/* Production Reference Photos Gallery (Camera Access & Supabase Storage) */}
+                <div className="pt-2">
+                  <ProjectReferencePhotosGallery
+                    project={project}
+                    onUpdateProject={onUpdateProject}
+                    compact={true}
+                  />
+                </div>
+
               </div>
             )}
 
-            {/* 2. FINANCIALS TAB */}
+            {/* 2. DEDICATED REFERENCE PHOTOS TAB */}
+            {activeTab === 'photos' && (
+              <div className="space-y-4">
+                <ProjectReferencePhotosGallery
+                  project={project}
+                  onUpdateProject={onUpdateProject}
+                  compact={false}
+                />
+              </div>
+            )}
+
+            {/* 2. QUALITY CONTROL (QC) TAB */}
+            {activeTab === 'qc' && (
+              <div className="space-y-5">
+                <div className="p-5 rounded-3xl bg-charcoal-950 border border-gold-500/30 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-gold-500/20 text-gold-300 border border-gold-500/30 flex items-center gap-1 font-bold">
+                          <ShieldCheck className="w-3.5 h-3.5 text-gold-400" />
+                          <span>SAP QM Inspection Gate</span>
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${
+                          project.qcStatus === 'passed'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            : project.qcStatus === 'revision_needed'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                        }`}>
+                          {project.qcStatus === 'passed' ? '✓ Passed' : project.qcStatus === 'revision_needed' ? '⚠️ Revision Needed' : 'In Progress'}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold font-display text-white">Quality Assurance Checklist</h3>
+                      <p className="text-xs text-gray-400 font-mono">
+                        Verify 6 luxury deliverables before client delivery or export handoff.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const items = (project.qcItems && project.qcItems.length > 0) ? project.qcItems : DEFAULT_QC_ITEMS;
+                          const allChecked = items.map(i => ({ ...i, checked: true }));
+                          onUpdateProject(project.id, {
+                            qcStatus: 'passed',
+                            qcScore: allChecked.length,
+                            qcTotal: allChecked.length,
+                            qcItems: allChecked,
+                            qcCheckedAt: new Date().toISOString()
+                          });
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Pass All Checks</span>
+                      </button>
+
+                      {onOpenQualityControl && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenQualityControl(project)}
+                          className="px-3 py-1.5 rounded-xl bg-gold-500/20 hover:bg-gold-500/30 text-gold-300 border border-gold-500/40 text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-gold-400" />
+                          <span>Full Modal</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Checklist items */}
+                  <div className="space-y-2.5 pt-2">
+                    {((project.qcItems && project.qcItems.length > 0) ? project.qcItems : DEFAULT_QC_ITEMS.map(i => ({ ...i, checked: project.qcStatus === 'passed' }))).map((item, idx) => (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          const currentItems = (project.qcItems && project.qcItems.length > 0) ? [...project.qcItems] : DEFAULT_QC_ITEMS.map(i => ({ ...i, checked: project.qcStatus === 'passed' }));
+                          const updated = currentItems.map(i => i.id === item.id ? { ...i, checked: !i.checked } : i);
+                          const passedCount = updated.filter(i => i.checked).length;
+                          onUpdateProject(project.id, {
+                            qcItems: updated,
+                            qcScore: passedCount,
+                            qcTotal: updated.length,
+                            qcStatus: passedCount === updated.length ? 'passed' : passedCount > 0 ? 'in_progress' : 'pending'
+                          });
+                        }}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                          item.checked 
+                            ? 'bg-emerald-950/20 border-emerald-500/30 text-white' 
+                            : 'bg-charcoal-900/60 border-white/5 hover:border-gold-500/20 text-gray-300'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                          item.checked 
+                            ? 'bg-emerald-500 border-emerald-400 text-charcoal-950' 
+                            : 'border-white/20 bg-charcoal-950 text-transparent'
+                        }`}>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold ${item.checked ? 'text-white' : 'text-gray-200'}`}>
+                            {idx + 1}. {item.label}
+                          </p>
+                          <p className="text-[11px] text-gray-400 font-sans mt-0.5">{item.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Inspector and Notes */}
+                  <div className="pt-3 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                    <div className="p-3 rounded-xl bg-charcoal-900/60 border border-white/5">
+                      <span className="text-[9px] text-gray-500 uppercase block mb-1">Inspected By</span>
+                      <span className="text-gray-200 font-bold">{project.qcCheckedBy || 'Pending Lead Sign-off'}</span>
+                      {project.qcCheckedAt && (
+                        <span className="text-[10px] text-gray-400 block mt-0.5">
+                          {new Date(project.qcCheckedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-charcoal-900/60 border border-white/5">
+                      <span className="text-[9px] text-gray-500 uppercase block mb-1">Inspection Notes</span>
+                      <span className="text-gray-300">{project.qcNotes || 'No issues reported.'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. FINANCIALS TAB */}
             {activeTab === 'financials' && (
               <div className="space-y-5">
                 <div className="p-5 rounded-3xl bg-charcoal-950 border border-emerald-500/30 space-y-4 shadow-xl">
@@ -453,6 +633,73 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                       <div className={`text-sm font-bold mt-1 ${pendingBalance > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                         ₹{pendingBalance.toLocaleString('en-IN')}
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SAP FICO Job-Costing & Profit Margin Card */}
+                <div className="p-5 rounded-3xl bg-charcoal-950 border border-gold-500/30 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-gold-500/20 text-gold-300 border border-gold-500/30 font-bold inline-flex items-center gap-1 mb-1">
+                        <TrendingUp className="w-3.5 h-3.5 text-gold-400" />
+                        <span>SAP FICO Job Costing</span>
+                      </span>
+                      <h4 className="text-sm font-bold font-display text-white">Project Profitability & Margin</h4>
+                    </div>
+
+                    <span className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${
+                      profitMarginPct >= 50
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : profitMarginPct >= 25
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                    }`}>
+                      Margin: {profitMarginPct}%
+                    </span>
+                  </div>
+
+                  {/* Breakdown details */}
+                  <div className="p-4 rounded-2xl bg-charcoal-900/80 border border-white/5 space-y-2.5 text-xs font-mono">
+                    <div className="flex items-center justify-between text-gray-300">
+                      <span>Client Contract Revenue:</span>
+                      <span className="font-bold text-white">₹{amount.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-rose-300/90">
+                      <span>Direct Editor Compensation:</span>
+                      <span>- ₹{editorPayment.toLocaleString('en-IN')}</span>
+                    </div>
+                    {otherExpenses > 0 && (
+                      <div className="flex items-center justify-between text-rose-300/90">
+                        <span>Other Production Overhead:</span>
+                        <span>- ₹{otherExpenses.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-between text-sm">
+                      <span className="font-bold text-gray-200">Net Studio Profit:</span>
+                      <span className={`font-extrabold ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        ₹{netProfit.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Margin Progress Bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-mono text-gray-400">
+                      <span>Target Studio Margin (&gt;50%)</span>
+                      <span className="text-gold-400 font-bold">{profitMarginPct}% Achieved</span>
+                    </div>
+                    <div className="w-full bg-charcoal-900 h-2 rounded-full overflow-hidden border border-white/5">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          profitMarginPct >= 50
+                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                            : profitMarginPct >= 25
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                            : 'bg-gradient-to-r from-rose-500 to-rose-400'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.max(0, profitMarginPct))}%` }}
+                      />
                     </div>
                   </div>
                 </div>

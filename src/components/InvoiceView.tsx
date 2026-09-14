@@ -68,6 +68,7 @@ import {
   Eraser
 } from 'lucide-react';
 import { Studio, Project, PaymentHistory, UserProfile, StudioInvoiceCustomItem } from '../types';
+import { MS_PER_DAY } from '../utils';
 
 export interface SavedQrProfile {
   id: string;
@@ -307,7 +308,7 @@ export default function InvoiceView({
   const getTodayStr = () => new Date().toISOString().split('T')[0];
   const getDefaultDueDateStr = (fromDateStr?: string) => {
     const base = fromDateStr ? new Date(fromDateStr) : new Date();
-    if (isNaN(base.getTime())) return new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+    if (isNaN(base.getTime())) return new Date(Date.now() + 7 * MS_PER_DAY).toISOString().split('T')[0];
     base.setDate(base.getDate() + 7);
     return base.toISOString().split('T')[0];
   };

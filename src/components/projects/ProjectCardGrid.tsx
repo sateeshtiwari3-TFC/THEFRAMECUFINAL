@@ -21,13 +21,19 @@ import {
   Layers,
   ChevronRight,
   FolderOpen,
-  RotateCcw
+  RotateCcw,
+  ShieldCheck,
+  Coins,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, Studio, Editor, Revision, UserRole, ProjectStatus } from '../../types';
 import { ProjectTagList } from '../ProjectTagBadge';
 import SwipeableCard from '../SwipeableCard';
-import ProjectStatusBadge from '../ProjectStatusBadge';
+import ProjectStatusBadge, { WORKFLOW_STAGES } from '../ProjectStatusBadge';
+import ProjectUrgencyBadge, { calculateUrgency } from './ProjectUrgencyBadge';
+import NewBadge from '../common/NewBadge';
+import { LazyImage } from '../common/LazyImage';
 
 interface ProjectCardGridProps {
   projects: Project[];
@@ -46,18 +52,8 @@ interface ProjectCardGridProps {
   onUpdateStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
   onResetProject?: (proj: Project, e: React.MouseEvent) => void;
   setHoveredPhoto: (photo: { url: string; title: string; subtitle: string } | null) => void;
+  onOpenQualityControl?: (proj: Project) => void;
 }
-
-const WORKFLOW_STAGES = [
-  { id: 'data_received', label: 'Data Received', color: 'text-sky-300', bg: 'bg-sky-500/20 border-sky-400/30' },
-  { id: 'assigned', label: 'Assigned', color: 'text-indigo-300', bg: 'bg-indigo-500/20 border-indigo-400/30' },
-  { id: 'editing', label: 'Editing', color: 'text-amber-300', bg: 'bg-amber-500/25 border-amber-400/40' },
-  { id: 'review', label: 'Review', color: 'text-purple-300', bg: 'bg-purple-500/20 border-purple-400/30' },
-  { id: 'revision', label: 'Revision', color: 'text-rose-300', bg: 'bg-rose-500/20 border-rose-400/40' },
-  { id: 'rendering', label: 'Rendering', color: 'text-teal-300', bg: 'bg-teal-500/20 border-teal-400/30' },
-  { id: 'delivered', label: 'Delivered', color: 'text-emerald-300', bg: 'bg-emerald-500/25 border-emerald-400/40' },
-  { id: 'closed', label: 'Closed', color: 'text-slate-300', bg: 'bg-slate-800/80 border-slate-700' }
-];
 
 const DEFAULT_COVER_IMAGE = 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=600';
 
@@ -105,7 +101,8 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
   onToggleTag,
   onUpdateStatus,
   onResetProject,
-  setHoveredPhoto
+  setHoveredPhoto,
+  onOpenQualityControl
 }) => {
   if (projects.length === 0) {
     return (
@@ -140,12 +137,9 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
           const pendingBalance = Math.max(0, amount - advance);
           const percentPaid = amount > 0 ? Math.min(100, Math.round((advance / amount) * 100)) : 0;
 
-          // Delivery Countdown calculations
-          const now = Date.now();
-          const deliveryTime = proj.deliveryDate ? new Date(proj.deliveryDate).getTime() : null;
-          const remainingDays = deliveryTime ? Math.ceil((deliveryTime - now) / (1000 * 3600 * 24)) : null;
-          const isOverdue = remainingDays !== null && remainingDays < 0 && !['delivered', 'closed'].includes(proj.status);
-          const isUrgent = remainingDays !== null && remainingDays >= 0 && remainingDays <= 3 && !['delivered', 'closed'].includes(proj.status);
+          // Urgency and Delivery calculations
+          const urgency = calculateUrgency(proj.deliveryDate, proj.status);
+          const isOverdue = urgency.urgencyLevel === 'overdue';
 
           // Revision count
           const projectRevisions = revisions.filter(r => r.projectId === proj.id);
@@ -164,7 +158,7 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
               initial="hidden"
               animate="visible"
               exit="exit"
-              className="h-full"
+              className="h-full project-card-item"
             >
               <SwipeableCard
                 id={proj.id}
@@ -175,21 +169,30 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                 }}
                 onTap={() => onSelectProject(proj)}
                 className={`rounded-3xl bg-gradient-to-b from-charcoal-900 via-charcoal-900/95 to-charcoal-950 border relative overflow-hidden flex flex-col justify-between cursor-pointer group shadow-xl hover:shadow-2xl transition-all duration-300 ${
-                  isOverdue 
-                    ? 'border-rose-500/50 hover:border-rose-500/80 shadow-[0_0_20px_rgba(244,63,94,0.15)]' 
+                  urgency.urgencyLevel === 'overdue'
+                    ? 'border-rose-500/60 hover:border-rose-500/85 shadow-[0_0_20px_rgba(244,63,94,0.18)]' 
+                    : urgency.urgencyLevel === 'due_today'
+                    ? 'border-red-500/60 hover:border-red-500/85 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
+                    : urgency.urgencyLevel === 'critical'
+                    ? 'border-amber-500/50 hover:border-amber-500/80 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
                     : proj.priority === 'urgent'
                     ? 'border-rose-500/40 hover:border-rose-500/70'
                     : proj.priority === 'high'
                     ? 'border-amber-500/40 hover:border-amber-500/70'
+                    : urgency.urgencyLevel === 'moderate'
+                    ? 'border-yellow-500/30 hover:border-yellow-500/60'
                     : 'border-luxury-green-800/30 hover:border-gold-500/50'
                 }`}
               >
-                {/* Photo Top Cover Header */}
+                {/* Photo Top Cover Header with IntersectionObserver Lazy Loading */}
                 <div className="h-44 relative overflow-hidden shrink-0">
-                  <img
+                  <LazyImage
                     src={proj.couplePhoto || DEFAULT_COVER_IMAGE}
+                    fallbackSrc={DEFAULT_COVER_IMAGE}
                     alt={proj.coupleName}
+                    containerClassName="w-full h-full"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-zoom-in"
+                    rootMargin="150px 0px"
                     onMouseEnter={() => setHoveredPhoto({
                       url: proj.couplePhoto || DEFAULT_COVER_IMAGE,
                       title: proj.coupleName,
@@ -197,7 +200,7 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                     })}
                     onMouseLeave={() => setHoveredPhoto(null)}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-charcoal-900 via-charcoal-900/50 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-charcoal-900 via-charcoal-900/50 to-transparent pointer-events-none" />
 
                   {/* Top Badges Floating Over Image */}
                   <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
@@ -213,6 +216,15 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                     </div>
 
                     <div className="flex items-center gap-1.5 pointer-events-auto">
+                      {(proj.referencePhotos && proj.referencePhotos.length > 0) && (
+                        <span 
+                          className="px-2 py-0.5 rounded-xl bg-charcoal-950/90 text-gold-300 border border-gold-500/40 text-[9px] font-mono font-bold flex items-center gap-1 shadow-md"
+                          title={`${proj.referencePhotos.length} Reference Photo(s)`}
+                        >
+                          <Camera className="w-2.5 h-2.5 text-gold-400" />
+                          <span>{proj.referencePhotos.length}</span>
+                        </span>
+                      )}
                       <ProjectStatusBadge
                         status={proj.status}
                         size="xs"
@@ -257,22 +269,16 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                       </div>
                     </div>
 
-                    {/* Delivery Countdown Badge */}
-                    <div className="shrink-0 text-right">
-                      {remainingDays !== null ? (
-                        <div className={`px-2.5 py-1 rounded-xl border text-[10px] font-mono font-bold inline-flex items-center gap-1 ${
-                          isOverdue
-                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse'
-                            : isUrgent
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                            : 'bg-charcoal-950/80 text-gray-300 border-white/10'
-                        }`}>
-                          <Clock className={`w-3 h-3 ${isOverdue ? 'text-rose-400' : isUrgent ? 'text-amber-400' : 'text-gold-400'}`} />
-                          <span>{isOverdue ? `${Math.abs(remainingDays)}d Overdue` : `${remainingDays}d left`}</span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] font-mono text-gray-500">No deadline set</span>
-                      )}
+                    {/* Visual Urgency Indicator Badge */}
+                    <div className="shrink-0 text-right flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
+                      <ProjectUrgencyBadge
+                        deliveryDate={proj.deliveryDate}
+                        status={proj.status}
+                        size="sm"
+                        showDot={true}
+                        showIcon={true}
+                      />
                     </div>
                   </div>
 
@@ -329,7 +335,7 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                     </div>
                   </div>
 
-                  {/* Financial Overview Progress */}
+                  {/* Financial Overview Progress & SAP FICO Profit Margin */}
                   {userRole === 'admin' && (
                     <div className="p-2.5 rounded-2xl bg-charcoal-950/80 border border-emerald-500/20 space-y-1.5">
                       <div className="flex items-center justify-between text-[11px] font-mono">
@@ -344,15 +350,57 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                           style={{ width: `${percentPaid}%` }}
                         />
                       </div>
+
+                      {/* SAP FICO Job Costing Margin */}
+                      {amount > 0 && (
+                        <div className="pt-1 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
+                          <span className="text-gray-400 flex items-center gap-1">
+                            <Coins className="w-3 h-3 text-gold-400" />
+                            <span>Job Profit:</span>
+                          </span>
+                          {(() => {
+                            const cost = (proj.editorPayment || 0) + (proj.otherExpenses || 0);
+                            const profit = amount - cost;
+                            const margin = Math.round((profit / amount) * 100);
+                            return (
+                              <span className={`font-bold px-1.5 py-0.5 rounded ${
+                                margin >= 50 ? 'text-emerald-400 bg-emerald-500/15 border border-emerald-500/30' : margin >= 25 ? 'text-amber-400 bg-amber-500/15 border border-amber-500/30' : 'text-rose-400 bg-rose-500/15 border border-rose-500/30'
+                              }`}>
+                                ₹{profit.toLocaleString('en-IN')} ({margin}%)
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Revisions & Quick Notes Indicators */}
+                  {/* Revisions, QC & Quick Notes Indicators */}
                   <div className="flex items-center justify-between text-[10px] font-mono text-gray-400 pt-1" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* SAP QM QC Status Indicator */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenQualityControl?.(proj);
+                        }}
+                        className={`px-2 py-0.5 rounded-md border flex items-center gap-1 font-mono text-[10px] font-bold cursor-pointer transition-all ${
+                          proj.qcStatus === 'passed'
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                            : proj.qcStatus === 'revision_needed'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                            : 'bg-gold-500/15 text-gold-300 border-gold-500/30 hover:bg-gold-500/25'
+                        }`}
+                        title="Open Quality Control Checklist"
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        <span>{proj.qcStatus === 'passed' ? `QC Pass (${proj.qcScore || 6}/6)` : 'QC Check'}</span>
+                      </button>
+
                       {projectRevisions.length > 0 && (
                         <span className="px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                          {projectRevisions.length} Revisions ({pendingRevs.length} Open)
+                          {projectRevisions.length} Rev ({pendingRevs.length})
                         </span>
                       )}
                       {proj.notes && (
@@ -381,6 +429,24 @@ export const ProjectCardGrid: React.FC<ProjectCardGridProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center gap-1">
+                    {onOpenQualityControl && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenQualityControl(proj);
+                        }}
+                        className={`p-2 rounded-xl text-xs font-mono flex items-center gap-1 transition-all cursor-pointer ${
+                          proj.qcStatus === 'passed'
+                            ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40'
+                            : 'bg-charcoal-900 hover:bg-gold-500/20 text-gold-400 border border-white/5 hover:border-gold-500/30'
+                        }`}
+                        title="SAP QM Quality Control Inspection"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => onOpenQuickNote(proj)}

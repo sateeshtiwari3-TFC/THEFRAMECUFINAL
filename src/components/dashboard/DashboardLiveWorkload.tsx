@@ -15,45 +15,111 @@ import {
   List,
   IndianRupee,
   Building2,
-  Calendar
+  Calendar,
+  ArrowUpDown,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, Editor } from '../../types';
+import { PRIORITY_ORDER, getPriorityConfig, getDaysRemaining, formatINR } from '../../utils';
 import ProjectStatusBadge from './ProjectStatusBadge';
+import NewBadge from '../common/NewBadge';
+
+export type DashboardProjectSort = 'deadline' | 'priority' | 'amount_desc' | 'amount_asc';
 
 interface DashboardLiveWorkloadProps {
   projects: Project[];
   editors: Editor[];
   onInspectProject: (project: Project) => void;
   onQuickAction: (tab: string, subAction?: string) => void;
+  sortBy?: DashboardProjectSort;
+  onSortChange?: (sort: DashboardProjectSort) => void;
 }
 
 export default function DashboardLiveWorkload({
   projects,
   editors,
   onInspectProject,
-  onQuickAction
+  onQuickAction,
+  sortBy,
+  onSortChange
 }: DashboardLiveWorkloadProps) {
   const [filterStage, setFilterStage] = useState<'all' | 'data_received' | 'assigned' | 'editing' | 'revision' | 'review' | 'rendering' | 'urgent'>('all');
   const [viewLayout, setViewLayout] = useState<'grid' | 'table'>('grid');
+  const [internalSort, setInternalSort] = useState<DashboardProjectSort>('deadline');
+  const [showAllCards, setShowAllCards] = useState(false);
 
-  // Active / in-progress projects (excluding delivered / closed)
+  const currentSort = sortBy ?? internalSort;
+  const handleSortChange = (newSort: DashboardProjectSort) => {
+    if (onSortChange) {
+      onSortChange(newSort);
+    } else {
+      setInternalSort(newSort);
+    }
+  };
+
+  // Active / in-progress projects (excluding delivered / closed) sorted by administrator preference
   const activeWorkingProjects = useMemo(() => {
-    return projects
+    return [...projects]
       .filter(p => p.status !== 'closed' && p.status !== 'delivered')
       .sort((a, b) => {
-        // Urgent & High priority first
-        const pOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, normal: 2, low: 3 };
-        const rankA = pOrder[a.priority || 'medium'] ?? 2;
-        const rankB = pOrder[b.priority || 'medium'] ?? 2;
-        if (rankA !== rankB) return rankA - rankB;
+        if (currentSort === 'deadline') {
+          // Nearest delivery date first (overdue < today < future < no deadline)
+          const dateA = a.deliveryDate ? new Date(a.deliveryDate).getTime() : null;
+          const dateB = b.deliveryDate ? new Date(b.deliveryDate).getTime() : null;
 
-        // Nearest delivery date
-        const dateA = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
-        const dateB = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
-        return dateA - dateB;
+          if (dateA !== null && dateB !== null) {
+            if (dateA !== dateB) return dateA - dateB;
+          } else if (dateA !== null) {
+            return -1; // Projects with deadline come before projects without
+          } else if (dateB !== null) {
+            return 1;
+          }
+
+          // Secondary tiebreaker: priority
+          const rankA = PRIORITY_ORDER[a.priority || 'medium'] ?? 2;
+          const rankB = PRIORITY_ORDER[b.priority || 'medium'] ?? 2;
+          return rankA - rankB;
+        }
+
+        if (currentSort === 'priority') {
+          // Urgent & High priority first
+          const rankA = PRIORITY_ORDER[a.priority || 'medium'] ?? 2;
+          const rankB = PRIORITY_ORDER[b.priority || 'medium'] ?? 2;
+          if (rankA !== rankB) return rankA - rankB;
+
+          // Secondary tiebreaker: nearest deadline
+          const dateA = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
+          const dateB = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
+          return dateA - dateB;
+        }
+
+        if (currentSort === 'amount_desc') {
+          // Highest project amount first
+          const amtA = Number(a.projectAmount) || 0;
+          const amtB = Number(b.projectAmount) || 0;
+          if (amtB !== amtA) return amtB - amtA;
+
+          // Secondary: nearest deadline
+          const dateA = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
+          const dateB = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
+          return dateA - dateB;
+        }
+
+        if (currentSort === 'amount_asc') {
+          // Lowest project amount first
+          const amtA = Number(a.projectAmount) || 0;
+          const amtB = Number(b.projectAmount) || 0;
+          if (amtA !== amtB) return amtA - amtB;
+
+          const dateA = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
+          const dateB = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
+          return dateA - dateB;
+        }
+
+        return 0;
       });
-  }, [projects]);
+  }, [projects, currentSort]);
 
   const filteredProjects = useMemo(() => {
     if (filterStage === 'all') return activeWorkingProjects;
@@ -62,39 +128,6 @@ export default function DashboardLiveWorkload({
     }
     return activeWorkingProjects.filter(p => p.status === filterStage);
   }, [activeWorkingProjects, filterStage]);
-
-  const getPriorityConfig = (priority?: string) => {
-    switch (priority) {
-      case 'urgent':
-        return {
-          label: 'Urgent',
-          badge: 'bg-rose-500/25 text-rose-300 border-rose-500/50 animate-pulse',
-          border: 'border-rose-500/40 hover:border-rose-400',
-          glow: 'from-rose-950/40 via-charcoal-900 to-charcoal-950'
-        };
-      case 'high':
-        return {
-          label: 'High Priority',
-          badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-          border: 'border-amber-500/30 hover:border-amber-400',
-          glow: 'from-amber-950/30 via-charcoal-900 to-charcoal-950'
-        };
-      default:
-        return {
-          label: 'Normal',
-          badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-          border: 'border-luxury-green-800/40 hover:border-gold-500/50',
-          glow: 'from-[#0b221a]/60 via-[#071712] to-[#040e0b]'
-        };
-    }
-  };
-
-  const getDaysRemaining = (deliveryDate?: string) => {
-    if (!deliveryDate) return null;
-    const due = new Date(deliveryDate).getTime();
-    const diff = Math.ceil((due - Date.now()) / (1000 * 3600 * 24));
-    return diff;
-  };
 
   const pingEditorWhatsApp = (e: React.MouseEvent, editor: Editor | undefined, project: Project) => {
     e.stopPropagation();
@@ -165,6 +198,25 @@ export default function DashboardLiveWorkload({
             >
               <List className="w-3.5 h-3.5" />
             </button>
+          </div>
+
+          {/* Production Sorting Dropdown with Red NEW badge */}
+          <div className="flex items-center gap-1.5 bg-black/60 border border-gold-500/30 hover:border-gold-500/50 rounded-xl px-2.5 py-1.5 shadow-sm text-xs transition-colors">
+            <ArrowUpDown className="w-3.5 h-3.5 text-gold-400 shrink-0" />
+            <span className="text-[11px] font-mono text-gold-300 font-semibold hidden sm:inline">Sort:</span>
+            <select
+              id="dashboard-workload-sort"
+              aria-label="Sort projects"
+              value={currentSort}
+              onChange={(e) => handleSortChange(e.target.value as DashboardProjectSort)}
+              className="bg-transparent text-white text-xs font-mono font-bold focus:outline-none cursor-pointer pr-1"
+            >
+              <option value="deadline" className="bg-charcoal-900 text-gray-100">⏳ Deadline (Nearest First)</option>
+              <option value="priority" className="bg-charcoal-900 text-gray-100">⚡ Priority (Urgent First)</option>
+              <option value="amount_desc" className="bg-charcoal-900 text-gray-100">💰 Project Amount (High to Low)</option>
+              <option value="amount_asc" className="bg-charcoal-900 text-gray-100">📉 Project Amount (Low to High)</option>
+            </select>
+            <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
           </div>
 
           {/* Filter Chips */}
@@ -268,7 +320,7 @@ export default function DashboardLiveWorkload({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredProjects.slice(0, 10).map((proj) => {
+              {filteredProjects.slice(0, showAllCards ? undefined : 10).map((proj) => {
                 const editor = editors.find(e => e.id === proj.assignedEditorId);
                 const daysLeft = getDaysRemaining(proj.deliveryDate);
                 const pConfig = getPriorityConfig(proj.priority);
@@ -404,7 +456,7 @@ export default function DashboardLiveWorkload({
       ) : (
         /* ================= 2. BENTO CARDS GRID VIEW ================= */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 relative z-10">
-          {filteredProjects.slice(0, 8).map((proj, idx) => {
+          {filteredProjects.slice(0, showAllCards ? undefined : 8).map((proj, idx) => {
             const editor = editors.find(e => e.id === proj.assignedEditorId);
             const pConfig = getPriorityConfig(proj.priority);
             const daysLeft = getDaysRemaining(proj.deliveryDate);
@@ -418,13 +470,24 @@ export default function DashboardLiveWorkload({
                 onClick={() => onInspectProject(proj)}
                 className={`group relative rounded-3xl bg-gradient-to-br ${pConfig.glow} border ${pConfig.border} p-5 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col justify-between space-y-4`}
               >
-                {/* Top Row: Event Type & Priority Badge */}
+                {/* Top Row: Event Type, Amount & Priority Badge */}
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-black/50 text-gold-300 border border-gold-500/30 uppercase font-semibold">
-                    {proj.eventType || 'Wedding Film'}
-                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-black/50 text-gold-300 border border-gold-500/30 uppercase font-semibold truncate">
+                      {proj.eventType || 'Wedding Film'}
+                    </span>
+                    {Number(proj.projectAmount) > 0 && (
+                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border truncate ${
+                        currentSort.startsWith('amount')
+                          ? 'bg-gold-500/20 text-gold-300 border-gold-400/60 shadow-[0_0_8px_rgba(234,179,8,0.25)]'
+                          : 'bg-black/40 text-gray-300 border-white/10'
+                      }`}>
+                        ₹{Number(proj.projectAmount).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
                   
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold ${pConfig.badge}`}>
+                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold shrink-0 ${pConfig.badge}`}>
                     {pConfig.label}
                   </span>
                 </div>
@@ -524,12 +587,21 @@ export default function DashboardLiveWorkload({
 
       {/* Footer Banner if more projects */}
       {filteredProjects.length > (viewLayout === 'table' ? 10 : 8) && (
-        <div className="pt-2 text-center">
+        <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowAllCards(!showAllCards)}
+            className="px-4 py-2 rounded-2xl bg-charcoal-900/90 hover:bg-charcoal-800 border border-gold-500/40 text-gold-300 text-xs font-mono font-bold transition-all cursor-pointer inline-flex items-center space-x-1.5 shadow-md"
+          >
+            <span>{showAllCards ? `Show Top ${viewLayout === 'table' ? 10 : 8}` : `Show All ${filteredProjects.length} Cards`}</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllCards ? 'rotate-180' : ''}`} />
+          </button>
+
           <button
             onClick={() => onQuickAction('projects')}
-            className="px-5 py-2 rounded-2xl bg-charcoal-900 hover:bg-charcoal-800 border border-gold-500/30 text-gold-300 text-xs font-mono transition-all cursor-pointer inline-flex items-center space-x-2 shadow-md"
+            className="px-5 py-2 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white text-xs font-mono transition-all cursor-pointer inline-flex items-center space-x-2 shadow-md"
           >
-            <span>View All {filteredProjects.length} Active Cuts in Production Table</span>
+            <span>Open Projects Full Deck</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

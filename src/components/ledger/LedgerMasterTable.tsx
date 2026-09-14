@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PaymentHistory, Project, Studio, Editor } from '../../types';
+import { MS_PER_DAY, formatINR } from '../../utils';
 
 interface LedgerMasterTableProps {
   payments: PaymentHistory[];
@@ -53,7 +54,7 @@ export const getPaymentOrProjectOverdueInfo = (proj?: Project, pay?: PaymentHist
     const d = new Date(pay.dueDate);
     d.setHours(0, 0, 0, 0);
     if (!isNaN(d.getTime()) && d < today) {
-      const diffDays = Math.max(1, Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
+      const diffDays = Math.max(1, Math.floor((today.getTime() - d.getTime()) / MS_PER_DAY));
       return {
         isOverdue: true,
         daysOverdue: diffDays,
@@ -85,7 +86,7 @@ export const getPaymentOrProjectOverdueInfo = (proj?: Project, pay?: PaymentHist
         const d = new Date(proj.paymentDueDate);
         d.setHours(0, 0, 0, 0);
         if (!isNaN(d.getTime()) && d < today) {
-          const diffDays = Math.max(1, Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
+          const diffDays = Math.max(1, Math.floor((today.getTime() - d.getTime()) / MS_PER_DAY));
           return {
             isOverdue: true,
             daysOverdue: diffDays,
@@ -101,7 +102,7 @@ export const getPaymentOrProjectOverdueInfo = (proj?: Project, pay?: PaymentHist
         const d = new Date(proj.deliveryDate);
         d.setHours(0, 0, 0, 0);
         if (!isNaN(d.getTime()) && d < today) {
-          const diffDays = Math.max(1, Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
+          const diffDays = Math.max(1, Math.floor((today.getTime() - d.getTime()) / MS_PER_DAY));
           return {
             isOverdue: true,
             daysOverdue: diffDays,

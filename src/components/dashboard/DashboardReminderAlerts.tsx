@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { CalendarEvent, Project } from '../../types';
+import { formatINR } from '../../utils';
 
 interface DashboardReminderAlertsProps {
   calendarEvents: CalendarEvent[];
@@ -170,7 +171,7 @@ export default function DashboardReminderAlerts({
 
                 {currentReminder.amount && currentReminder.amount > 0 && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-gold-500/20 border border-gold-500/40 text-gold-300 font-mono font-bold text-xs sm:text-sm">
-                    ₹{currentReminder.amount.toLocaleString('en-IN')}
+                    {formatINR(currentReminder.amount)}
                   </span>
                 )}
               </div>

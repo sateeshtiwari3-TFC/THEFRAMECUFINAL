@@ -20,7 +20,8 @@ import {
   Trash2,
   Search,
   Command,
-  Zap
+  Zap,
+  CloudOff
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import ThemeToggle, { AppTheme } from './ThemeToggle';
@@ -35,6 +36,7 @@ interface TopHeaderBarProps {
   unreadNotificationCount?: number;
   recycleBinCount?: number;
   onOpenSearch?: () => void;
+  isOnline?: boolean;
 }
 
 const TAB_TITLES: Record<string, { label: string; icon: React.ElementType; description: string }> = {
@@ -64,7 +66,8 @@ export default function TopHeaderBar({
   onThemeChange,
   unreadNotificationCount = 0,
   recycleBinCount = 0,
-  onOpenSearch
+  onOpenSearch,
+  isOnline = true
 }: TopHeaderBarProps) {
   const currentTab = TAB_TITLES[activeTab] || {
     label: activeTab,
@@ -91,10 +94,17 @@ export default function TopHeaderBar({
               <span>{currentTab.label}</span>
               <span className={`w-2 h-2 rounded-full ${tabTheme.subDot} inline-block animate-pulse shrink-0`} />
             </h1>
-            <span className={`hidden xl:inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded-full ${tabTheme.bgActive} ${tabTheme.text} border ${tabTheme.borderActive} transition-colors duration-300 shrink-0`}>
-              <Activity className="w-2.5 h-2.5 animate-pulse" />
-              Live ERP
-            </span>
+            {!isOnline ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 shrink-0 animate-pulse">
+                <CloudOff className="w-2.5 h-2.5" />
+                Local Cache
+              </span>
+            ) : (
+              <span className={`hidden xl:inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-mono font-bold uppercase rounded-full ${tabTheme.bgActive} ${tabTheme.text} border ${tabTheme.borderActive} transition-colors duration-300 shrink-0`}>
+                <Activity className="w-2.5 h-2.5 animate-pulse" />
+                Live ERP
+              </span>
+            )}
           </div>
           <p className="text-[10px] sm:text-[11px] font-sans text-gray-400 hidden sm:block truncate max-w-[200px] lg:max-w-none">
             {currentTab.description}

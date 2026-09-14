@@ -63,6 +63,9 @@ import TopHeaderBar from './components/TopHeaderBar';
 import GlobalSearchModal from './components/GlobalSearchModal';
 import QuickNotesDrawer from './components/dashboard/QuickNotesDrawer';
 import AutomationHub from './components/AutomationHub';
+import AuthLoadingPlaceholder from './components/AuthLoadingPlaceholder';
+import OfflineStatusBanner from './components/common/OfflineStatusBanner';
+import FloatingScrollToTop from './components/common/FloatingScrollToTop';
 import { evaluateProjectStatusTransitions } from './services/automationEngine';
 import { Zap, X } from 'lucide-react';
 
@@ -80,16 +83,20 @@ const getTimestampMs = (val: any): number => {
 };
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    // Session state is strictly memory-based - clear any cached user credentials and require re-entry on refresh
+  const [isAuthInitializing, setIsAuthInitializing] = useState<boolean>(true);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [activeTab, setActiveTab] = useState<string>(() => {
     try {
-      localStorage.removeItem('tfc_user');
-    } catch {
-      // ignore
-    }
-    return null;
+      const raw = sessionStorage.getItem('tfc_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.role === 'editor' || parsed.role === 'studio')) {
+          return 'projects';
+        }
+      }
+    } catch {}
+    return 'dashboard';
   });
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [subActionTrigger, setSubActionTrigger] = useState<string>('');
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState<boolean>(false);
@@ -97,6 +104,80 @@ export default function App() {
   const [geminiPreselectedProjectId, setGeminiPreselectedProjectId] = useState<string>("");
 
   const lastCheckedSignatureRef = React.useRef<string>('');
+
+  // Initial Authentication & Session Verification Lifecycle
+  // Prevents the dashboard or subviews from momentarily flashing before session check or login redirect logic executes
+  useEffect(() => {
+    let isMounted = true;
+
+    // Purge any stale localStorage credentials so session state is strictly validated
+    try {
+      localStorage.removeItem('tfc_session');
+      localStorage.removeItem('tfc_user');
+    } catch {
+      // ignore
+    }
+
+    const verifySession = async () => {
+      try {
+        let savedSessionRaw: string | null = null;
+        try {
+          savedSessionRaw = sessionStorage.getItem('tfc_session');
+        } catch (storageErr) {
+          console.warn("Session storage access restricted:", storageErr);
+        }
+
+        if (savedSessionRaw) {
+          const sessionData = JSON.parse(savedSessionRaw);
+          if (sessionData && sessionData.uid && sessionData.email && sessionData.role) {
+            const userProfile: UserProfile = {
+              uid: sessionData.uid,
+              email: sessionData.email,
+              name: sessionData.name || (sessionData.email.includes('vansh') ? 'Vansh Tiwari' : sessionData.email.includes('kk') ? 'Wedding By KK' : 'Satish Tiwari'),
+              photoURL: sessionData.photoURL || undefined,
+              role: sessionData.role,
+              studioId: sessionData.studioId,
+              editorId: sessionData.editorId,
+              createdAt: new Date(sessionData.createdAt || Date.now())
+            };
+
+            if (isMounted) {
+              const targetTab = (sessionData.role === 'editor' || sessionData.role === 'studio') ? 'projects' : 'dashboard';
+              setActiveTab(targetTab);
+              setCurrentUser(userProfile);
+            }
+          } else {
+            if (isMounted) {
+              setCurrentUser(null);
+            }
+          }
+        } else {
+          // No authenticated session found - redirect directly to login portal
+          if (isMounted) {
+            setCurrentUser(null);
+          }
+        }
+      } catch (err) {
+        console.error("Session verification error:", err);
+        if (isMounted) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          // Micro-delay ensures smooth optical fade and prevents any sub-frame render jitter
+          setTimeout(() => {
+            if (isMounted) setIsAuthInitializing(false);
+          }, 120);
+        }
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Global Keyboard shortcut listener for Omni-Search (Cmd+K / Ctrl+K / "/")
   useEffect(() => {
@@ -1246,16 +1327,21 @@ export default function App() {
   // --- Login handler ---
   const handleLogin = async (email: string, role: UserRole, id?: string) => {
     const userUid = getUserUid(email, role);
+    const cleanEmail = email.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 
     let defaultName = 'Satish Tiwari';
     if (email === 'vansh@framecut.com' || email === 'vansh2000') {
       defaultName = 'Vansh Tiwari';
     } else if (email === 'kk@weddingbykk.com') {
       defaultName = 'Wedding By KK';
+    } else {
+      defaultName = email.split('@')[0];
     }
 
     let loadedPhotoURL: string | undefined = undefined;
     let loadedName: string = defaultName;
+    let loadedEditorId: string | undefined = role === 'editor' ? id : undefined;
+    let loadedStudioId: string | undefined = role === 'studio' ? id : undefined;
 
     // 1. First check localStorage for cached profile
     try {
@@ -1264,6 +1350,8 @@ export default function App() {
         const parsed = JSON.parse(cached);
         if (parsed.photoURL) loadedPhotoURL = parsed.photoURL;
         if (parsed.name) loadedName = parsed.name;
+        if (parsed.editorId && !loadedEditorId) loadedEditorId = parsed.editorId;
+        if (parsed.studioId && !loadedStudioId) loadedStudioId = parsed.studioId;
       }
     } catch (e) {
       console.error("Error reading cached profile from localStorage:", e);
@@ -1277,6 +1365,8 @@ export default function App() {
         const data = userSnap.data();
         if (data.photoURL) loadedPhotoURL = data.photoURL;
         if (data.name) loadedName = data.name;
+        if (data.editorId && !loadedEditorId) loadedEditorId = data.editorId;
+        if (data.studioId && !loadedStudioId) loadedStudioId = data.studioId;
       } else {
         // Initialize doc in Firestore
         await setDoc(userDocRef, {
@@ -1284,6 +1374,8 @@ export default function App() {
           email,
           name: loadedName,
           role,
+          editorId: loadedEditorId || null,
+          studioId: loadedStudioId || null,
           photoURL: loadedPhotoURL || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
@@ -1291,6 +1383,31 @@ export default function App() {
       }
     } catch (e) {
       console.error("Error fetching or initializing user document from Firestore:", e);
+    }
+
+    // 3. If editorId or studioId is still not found, try matching with existing editors/studios
+    if (role === 'editor' && !loadedEditorId) {
+      const matchedEditor = editors.find(e => 
+        e.email?.toLowerCase() === email.toLowerCase() || 
+        e.id.toLowerCase().includes(cleanEmail) ||
+        (e.name && loadedName && e.name.toLowerCase() === loadedName.toLowerCase())
+      );
+      if (matchedEditor) {
+        loadedEditorId = matchedEditor.id;
+        if (!loadedName || loadedName === email.split('@')[0]) loadedName = matchedEditor.name;
+      }
+    }
+
+    if (role === 'studio' && !loadedStudioId) {
+      const matchedStudio = studios.find(s => 
+        s.email?.toLowerCase() === email.toLowerCase() || 
+        s.id.toLowerCase().includes(cleanEmail) ||
+        (s.name && loadedName && s.name.toLowerCase() === loadedName.toLowerCase())
+      );
+      if (matchedStudio) {
+        loadedStudioId = matchedStudio.id;
+        if (!loadedName || loadedName === email.split('@')[0]) loadedName = matchedStudio.name;
+      }
     }
 
     // Also sync to Cloud SQL relational database
@@ -1312,30 +1429,43 @@ export default function App() {
       name: loadedName,
       photoURL: loadedPhotoURL,
       role,
-      studioId: role === 'studio' ? id : undefined,
-      editorId: role === 'editor' ? id : undefined,
+      studioId: role === 'studio' ? loadedStudioId : undefined,
+      editorId: role === 'editor' ? loadedEditorId : undefined,
       createdAt: new Date()
     };
 
-    // User session state is strictly memory-based (no persistence to localStorage)
-    setCurrentUser(profile);
+    // User session persistence in sessionStorage
     try {
+      const sessionData = {
+        uid: userUid,
+        email,
+        name: loadedName,
+        photoURL: loadedPhotoURL,
+        role,
+        studioId: role === 'studio' ? loadedStudioId : undefined,
+        editorId: role === 'editor' ? loadedEditorId : undefined,
+        createdAt: new Date().toISOString()
+      };
+      sessionStorage.setItem('tfc_session', JSON.stringify(sessionData));
+      localStorage.removeItem('tfc_session');
       localStorage.removeItem('tfc_user');
     } catch {
       // ignore
     }
 
-    // Redirect role-specific defaults
-    if (role === 'editor' || role === 'studio') {
-      setActiveTab('projects');
-    } else {
-      setActiveTab('dashboard');
-    }
+    // Direct role-specific target tab FIRST before setting currentUser
+    // This strictly prevents any sub-frame flash of the admin dashboard when an editor or studio logs in
+    const targetTab = (role === 'editor' || role === 'studio') ? 'projects' : 'dashboard';
+    setActiveTab(targetTab);
+    setCurrentUser(profile);
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setActiveTab('dashboard');
     try {
+      sessionStorage.removeItem('tfc_session');
+      localStorage.removeItem('tfc_session');
       localStorage.removeItem('tfc_user');
     } catch {
       // ignore
@@ -1356,8 +1486,24 @@ export default function App() {
       photoURL: finalPhotoURL
     };
 
-    // Strictly memory-based user session
+    // Update active user state and cached session
     setCurrentUser(updatedProfile);
+    try {
+      const sessionData = {
+        uid: updatedProfile.uid,
+        email: updatedProfile.email,
+        name: updatedProfile.name,
+        photoURL: updatedProfile.photoURL,
+        role: updatedProfile.role,
+        studioId: updatedProfile.studioId,
+        editorId: updatedProfile.editorId,
+        createdAt: updatedProfile.createdAt
+      };
+      sessionStorage.setItem('tfc_session', JSON.stringify(sessionData));
+      localStorage.setItem('tfc_session', JSON.stringify(sessionData));
+    } catch {
+      // ignore
+    }
 
     try {
       // Sync update to firestore users collection
@@ -1469,6 +1615,8 @@ export default function App() {
     if (currentUser?.role === 'studio' && currentUser.studioId) {
       return notifications.filter(n => {
         if (n.studioId) return n.studioId === currentUser.studioId;
+        if (n.recipientId) return n.recipientId === currentUser.studioId || n.recipientId === currentUser.email;
+        if (n.recipientRole === 'studio' || n.recipientRole === 'all') return true;
         if (n.projectId) {
           const proj = projects.find(p => p.id === n.projectId);
           return proj?.studioId === currentUser.studioId;
@@ -1478,10 +1626,14 @@ export default function App() {
     }
     if (currentUser?.role === 'editor' && currentUser.editorId) {
       return notifications.filter(n => {
+        if (n.editorId) return n.editorId === currentUser.editorId;
+        if (n.recipientId) return n.recipientId === currentUser.editorId || n.recipientId === currentUser.email;
+        if (n.recipientRole === 'editor' || n.recipientRole === 'all') return true;
         if (n.projectId) {
           const proj = projects.find(p => p.id === n.projectId);
           return proj?.assignedEditorId === currentUser.editorId || proj?.secondEditorId === currentUser.editorId;
         }
+        if (n.studioId && !n.editorId) return false;
         return true;
       });
     }
@@ -1492,6 +1644,40 @@ export default function App() {
 
   // Render correct tab view panel
   const renderView = () => {
+    // 1. Unauthenticated safeguard
+    if (!currentUser) {
+      return null;
+    }
+
+    // 2. Strict Role-based access control safeguard:
+    // Non-admin roles (Editor & Studio) are strictly prohibited from viewing the admin dashboard.
+    // If activeTab is 'dashboard', immediately fallback to ProjectsView to guarantee zero dashboard leakage or flashing.
+    if (currentUser.role === 'editor' || currentUser.role === 'studio') {
+      if (activeTab === 'dashboard') {
+        return (
+          <ProjectsView
+            projects={roleFilteredProjects}
+            studios={studios}
+            editors={editors}
+            revisions={revisions}
+            payments={payments}
+            calendarEvents={calendarEvents}
+            userRole={currentUser.role}
+            currentStudioId={currentUser.studioId}
+            onAddProject={handleAddProject}
+            onUpdateProject={handleUpdateProject}
+            onDeleteProject={handleDeleteProject}
+            onAddRevision={handleAddRevision}
+            onResolveRevision={handleResolveRevision}
+            onDeleteRevision={handleDeleteRevision}
+            onRedirectToRegistry={() => setActiveTab('registry')}
+            initialTriggerAction={subActionTrigger}
+            onOpenCreativeTool={handleOpenGeminiCreativeTool}
+          />
+        );
+      }
+    }
+
     switch (activeTab) {
       case 'projects':
         return (
@@ -1575,6 +1761,29 @@ export default function App() {
           />
         );
       case 'dashboard':
+        if (currentUser.role !== 'admin') {
+          return (
+            <ProjectsView
+              projects={roleFilteredProjects}
+              studios={studios}
+              editors={editors}
+              revisions={revisions}
+              payments={payments}
+              calendarEvents={calendarEvents}
+              userRole={currentUser.role}
+              currentStudioId={currentUser.studioId}
+              onAddProject={handleAddProject}
+              onUpdateProject={handleUpdateProject}
+              onDeleteProject={handleDeleteProject}
+              onAddRevision={handleAddRevision}
+              onResolveRevision={handleResolveRevision}
+              onDeleteRevision={handleDeleteRevision}
+              onRedirectToRegistry={() => setActiveTab('registry')}
+              initialTriggerAction={subActionTrigger}
+              onOpenCreativeTool={handleOpenGeminiCreativeTool}
+            />
+          );
+        }
         return (
           <DashboardView
             projects={projects}
@@ -1706,6 +1915,7 @@ export default function App() {
             onMarkRead={handleMarkRead}
             onClearNotification={handleClearNotification}
             onClearAllNotifications={handleClearAllNotifications}
+            onNavigateTab={(tab) => setActiveTab(tab)}
           />
         );
       case 'automation':
@@ -1760,52 +1970,81 @@ export default function App() {
     }
   };
 
-  // If not logged in, render cinematic brand portal
+  // 1. Initial Authentication & Session Verification Lifecycle Placeholder
+  // Strictly prevents the dashboard or subviews from momentarily flashing before session check or login redirect logic executes
+  if (isAuthInitializing) {
+    return <AuthLoadingPlaceholder theme={theme} />;
+  }
+
+  // 2. If not logged in, render cinematic brand portal with persistent offline alert if disconnected
   if (!currentUser) {
-    return <LoginView onLogin={handleLogin} />;
+    return (
+      <div className="flex flex-col min-h-screen bg-charcoal-950 text-gray-200 relative">
+        <OfflineStatusBanner 
+          isOnline={isOnline} 
+          onCheckConnection={() => setIsOnline(navigator.onLine)} 
+        />
+        <LoginView onLogin={handleLogin} studios={studios} editors={editors} />
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-charcoal-950 text-gray-200 relative overflow-x-hidden">
-      {/* Multi-layered Parallax Ambient Background Canvas */}
-      <ParallaxBackground />
-      
-      {/* Floating sidebar menu */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        theme={theme}
-        onThemeChange={setTheme}
-        recycleBinCount={recycleBinItems.length}
+    <div className="flex flex-col min-h-screen bg-charcoal-950 text-gray-200 relative overflow-x-hidden">
+      {/* Persistent Top Network & Local Sync Alert Banner */}
+      <OfflineStatusBanner 
+        isOnline={isOnline} 
+        onCheckConnection={() => setIsOnline(navigator.onLine)} 
       />
 
-      {/* Sidebar layout spacer to reserve space on desktop and prevent reflows on hover */}
-      <div className="hidden md:block w-24 shrink-0 mr-4" />
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        className="flex flex-col md:flex-row flex-1 relative overflow-x-hidden"
+      >
+        {/* Multi-layered Parallax Ambient Background Canvas - Only active on desktop */}
+        <div className="hidden md:block">
+          <ParallaxBackground />
+        </div>
+        
+        {/* Floating sidebar menu */}
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          theme={theme}
+          onThemeChange={setTheme}
+          recycleBinCount={recycleBinItems.length}
+        />
 
-      {/* Main View Container with Parallax Perspective */}
-      <main id="main-content-flow" className="flex-1 min-w-0 p-4 md:p-8 md:pl-6 overflow-x-hidden min-h-screen relative z-10">
-        <div className="max-w-7xl mx-auto pb-28 md:pb-16 w-full min-w-0">
-          {/* Top Persistent Header Toolbar */}
-          <TopHeaderBar
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            currentUser={currentUser}
-            theme={theme}
-            onThemeChange={setTheme}
-            unreadNotificationCount={roleFilteredNotifications.filter(n => !n.read).length}
-            recycleBinCount={recycleBinItems.length}
-            onOpenSearch={() => setIsGlobalSearchOpen(true)}
-          />
+        {/* Sidebar layout spacer to reserve space on desktop and prevent reflows on hover */}
+        <div className="hidden md:block w-24 shrink-0 mr-4" />
+
+        {/* Main View Container with Parallax Perspective */}
+        <main id="main-content-flow" className="flex-1 min-w-0 p-4 md:p-8 md:pl-6 overflow-x-hidden min-h-screen relative z-10">
+          <div className="max-w-7xl mx-auto pb-28 md:pb-16 w-full min-w-0">
+            {/* Top Persistent Header Toolbar */}
+            <TopHeaderBar
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              currentUser={currentUser}
+              theme={theme}
+              onThemeChange={setTheme}
+              unreadNotificationCount={roleFilteredNotifications.filter(n => !n.read).length}
+              recycleBinCount={recycleBinItems.length}
+              onOpenSearch={() => setIsGlobalSearchOpen(true)}
+              isOnline={isOnline}
+            />
 
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 14, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -10, filter: 'blur(2px)' }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               className="w-full"
             >
               {renderView()}
@@ -1893,6 +2132,10 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Floating 1-tap Scroll-to-Top Button for Mobile & Desktop */}
+      <FloatingScrollToTop />
+      </motion.div>
     </div>
   );
 }

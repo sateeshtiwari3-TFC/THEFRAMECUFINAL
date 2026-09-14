@@ -23,6 +23,12 @@ import { WhatsAppShareModal } from './projects/WhatsAppShareModal';
 import ProjectWorksheetModal from './ProjectWorksheetModal';
 import QuickPrintInvoiceModal from './QuickPrintInvoiceModal';
 import { ProjectPdfExportModal } from './ProjectPdfExportModal';
+import { ProjectQualityControlModal } from './projects/ProjectQualityControlModal';
+import { ProjectsTimelineGanttView } from './projects/ProjectsTimelineGanttView';
+import { calculateUrgency } from './projects/ProjectUrgencyBadge';
+import { PRIORITY_ORDER } from '../utils';
+import { ProjectStatusTabsStrip, PROJECT_STATUS_TABS } from './projects/ProjectStatusTabsStrip';
+import { MobileStatusSwipeNavigator } from './projects/MobileStatusSwipeNavigator';
 import { 
   Trash2, 
   RotateCcw, 
@@ -72,7 +78,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   onOpenCreativeTool
 }) => {
   // View mode
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban' | 'timeline'>('grid');
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,6 +109,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   const [isPdfExportModalOpen, setIsPdfExportModalOpen] = useState(false);
+  const [qcModalProject, setQcModalProject] = useState<Project | null>(null);
 
   // In-app Action Confirmation Modals & Toast State
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
@@ -133,6 +140,91 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Mobile Touch-Swipe Gesture State for Switching Status Tabs
+  const touchStartRef = React.useRef<{ x: number; y: number; time: number } | null>(null);
+  const [swipeFeedback, setSwipeFeedback] = useState<{ label: string; count: number; direction: 'next' | 'prev' } | null>(null);
+  const [swipeTransitionDirection, setSwipeTransitionDirection] = useState<'left' | 'right' | null>(null);
+
+  const handleSwitchStatusTab = (direction: 'next' | 'prev') => {
+    const currentIndex = PROJECT_STATUS_TABS.findIndex(t => t.id === statusFilter);
+    const safeIndex = currentIndex === -1 ? 0 : currentIndex;
+    let nextIndex: number;
+    if (direction === 'next') {
+      nextIndex = safeIndex < PROJECT_STATUS_TABS.length - 1 ? safeIndex + 1 : 0;
+      setSwipeTransitionDirection('left');
+    } else {
+      nextIndex = safeIndex > 0 ? safeIndex - 1 : PROJECT_STATUS_TABS.length - 1;
+      setSwipeTransitionDirection('right');
+    }
+    const targetTab = PROJECT_STATUS_TABS[nextIndex];
+    if (targetTab) {
+      setStatusFilter(targetTab.id);
+
+      // Compute count in targeted status
+      const count = targetTab.id === 'all'
+        ? projects.length
+        : projects.filter(p => p.status === targetTab.id).length;
+
+      // Haptic feedback if supported on mobile
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(12); } catch (_) {}
+      }
+
+      setSwipeFeedback({
+        label: targetTab.label,
+        count,
+        direction
+      });
+      setTimeout(() => setSwipeFeedback(null), 1600);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const target = e.target as HTMLElement | null;
+    // Don't intercept touches inside interactive controls or overlays
+    if (target && (
+      target.closest('input') || 
+      target.closest('textarea') || 
+      target.closest('select') || 
+      target.closest('button') || 
+      target.closest('[role="dialog"]') ||
+      target.closest('[data-no-swipe]')
+    )) {
+      return;
+    }
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      time: Date.now()
+    };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const deltaTime = Date.now() - touchStartRef.current.time;
+    touchStartRef.current = null;
+
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    // Intentional horizontal swipe detection:
+    // Minimum 45px displacement, strictly horizontal (absX > absY * 1.35) so vertical scrolling isn't interrupted,
+    // and completed within 700ms.
+    if (absX >= 45 && absX > absY * 1.35 && deltaTime <= 700) {
+      if (deltaX < 0) {
+        // Swiped Left -> Next tab
+        handleSwitchStatusTab('next');
+      } else {
+        // Swiped Right -> Previous tab
+        handleSwitchStatusTab('prev');
+      }
+    }
+  };
 
   // Handle Initial Trigger Action from Navigation if present
   useEffect(() => {
@@ -170,12 +262,16 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         }
       }
 
-      // Deadline filter
-      if (deadlineFilter === 'due_7_days') {
-        if (!project.deliveryDate) return false;
-        const diffDays = Math.ceil((new Date(project.deliveryDate).getTime() - now) / (1000 * 3600 * 24));
-        if (diffDays > 7 || ['delivered', 'closed'].includes(project.status)) {
-          return false;
+      // Deadline & Urgency filter
+      if (deadlineFilter !== 'all') {
+        const urgency = calculateUrgency(project.deliveryDate, project.status);
+        if (deadlineFilter === 'overdue') {
+          if (urgency.urgencyLevel !== 'overdue') return false;
+        } else if (deadlineFilter === 'critical') {
+          if (urgency.urgencyLevel !== 'critical' && urgency.urgencyLevel !== 'due_today' && urgency.urgencyLevel !== 'overdue') return false;
+        } else if (deadlineFilter === 'due_7_days') {
+          if (!project.deliveryDate || ['delivered', 'closed'].includes(project.status)) return false;
+          if (urgency.daysRemaining === null || urgency.daysRemaining > 7) return false;
         }
       }
 
@@ -194,6 +290,14 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
 
       return true;
     }).sort((a, b) => {
+      if (sortBy === 'priority' || sortBy === 'priority_asc') {
+        const pa = PRIORITY_ORDER[a.priority || 'medium'] ?? 2;
+        const pb = PRIORITY_ORDER[b.priority || 'medium'] ?? 2;
+        if (pa !== pb) return pa - pb;
+        const da = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
+        const db = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
+        return da - db;
+      }
       if (sortBy === 'delivery_asc') {
         const da = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
         const db = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
@@ -388,72 +492,124 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         userRole={userRole}
       />
 
-      {/* 3. Primary Content Views: Grid / Table / Kanban */}
-      <div className="mt-4">
-        {viewMode === 'grid' && (
-          <ProjectCardGrid
-            projects={filteredProjects}
-            studios={studios}
-            editors={editors}
-            revisions={revisions}
-            userRole={userRole}
-            onSelectProject={handleSelectProject}
-            onEditProject={handleEditProject}
-            onDeleteProject={handleDeleteProject}
-            onOpenQuickNote={handleOpenQuickNote}
-            onOpenWhatsAppShare={handleOpenWhatsAppShare}
-            onOpenWorksheet={handleOpenWorksheet}
-            onOpenQuickPrintInvoice={handleOpenQuickPrintInvoice}
-            onToggleTag={handleToggleTag}
-            onUpdateStatus={handleUpdateStatus}
-            onResetProject={handleResetProject}
-            setHoveredPhoto={setHoveredPhoto}
-          />
-        )}
+      {/* 3. Dedicated Status Tabs Strip with Quick Stage Switching */}
+      <ProjectStatusTabsStrip
+        statusFilter={statusFilter}
+        setStatusFilter={(newStatus) => {
+          setSwipeTransitionDirection(null);
+          setStatusFilter(newStatus);
+        }}
+        projects={projects}
+        totalFilteredCount={filteredProjects.length}
+      />
 
-        {viewMode === 'list' && (
-          <ProjectListView
-            projects={filteredProjects}
-            studios={studios}
-            editors={editors}
-            revisions={revisions}
-            userRole={userRole}
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
-            deadlineFilter={deadlineFilter}
-            setDeadlineFilter={setDeadlineFilter}
-            searchQuery={searchQuery}
-            onSelectProject={handleSelectProject}
-            onEditProject={handleEditProject}
-            onDeleteProject={handleDeleteProject}
-            onOpenQuickNote={handleOpenQuickNote}
-            onOpenWhatsAppShare={handleOpenWhatsAppShare}
-            onOpenWorksheet={handleOpenWorksheet}
-            onOpenQuickPrintInvoice={handleOpenQuickPrintInvoice}
-            onToggleTag={handleToggleTag}
-            onUpdateStatus={handleUpdateStatus}
-            onResetProject={handleResetProject}
-            setHoveredPhoto={setHoveredPhoto}
-          />
-        )}
+      {/* 4. Primary Content Views: Grid / Table / Kanban with Mobile Touch-Swipe Gesture */}
+      <div 
+        id="projects-mobile-swipe-viewport"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="mt-4 relative min-h-[350px] touch-pan-y"
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={`view-${viewMode}-${statusFilter}`}
+            initial={{ 
+              opacity: 0.85, 
+              x: swipeTransitionDirection === 'left' ? 24 : swipeTransitionDirection === 'right' ? -24 : 0 
+            }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ 
+              opacity: 0.85, 
+              x: swipeTransitionDirection === 'left' ? -24 : swipeTransitionDirection === 'right' ? 24 : 0 
+            }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+          >
+            {viewMode === 'grid' && (
+              <ProjectCardGrid
+                projects={filteredProjects}
+                studios={studios}
+                editors={editors}
+                revisions={revisions}
+                userRole={userRole}
+                onSelectProject={handleSelectProject}
+                onEditProject={handleEditProject}
+                onDeleteProject={handleDeleteProject}
+                onOpenQuickNote={handleOpenQuickNote}
+                onOpenWhatsAppShare={handleOpenWhatsAppShare}
+                onOpenWorksheet={handleOpenWorksheet}
+                onOpenQuickPrintInvoice={handleOpenQuickPrintInvoice}
+                onToggleTag={handleToggleTag}
+                onUpdateStatus={handleUpdateStatus}
+                onResetProject={handleResetProject}
+                onOpenQualityControl={(p) => setQcModalProject(p)}
+                setHoveredPhoto={setHoveredPhoto}
+              />
+            )}
 
-        {viewMode === 'kanban' && (
-          <ProjectKanbanBoard
-            projects={filteredProjects}
-            studios={studios}
-            editors={editors}
-            revisions={revisions}
-            userRole={userRole}
-            onSelectProject={handleSelectProject}
-            onEditProject={handleEditProject}
-            onDeleteProject={handleDeleteProject}
-            onOpenQuickNote={handleOpenQuickNote}
-            onOpenWhatsAppShare={handleOpenWhatsAppShare}
-            onUpdateStatus={handleUpdateStatus}
-            onResetProject={handleResetProject}
-            setHoveredPhoto={setHoveredPhoto}
-          />
-        )}
+            {viewMode === 'list' && (
+              <ProjectListView
+                projects={filteredProjects}
+                studios={studios}
+                editors={editors}
+                revisions={revisions}
+                userRole={userRole}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                deadlineFilter={deadlineFilter}
+                setDeadlineFilter={setDeadlineFilter}
+                searchQuery={searchQuery}
+                onSelectProject={handleSelectProject}
+                onEditProject={handleEditProject}
+                onDeleteProject={handleDeleteProject}
+                onOpenQuickNote={handleOpenQuickNote}
+                onOpenWhatsAppShare={handleOpenWhatsAppShare}
+                onOpenWorksheet={handleOpenWorksheet}
+                onOpenQuickPrintInvoice={handleOpenQuickPrintInvoice}
+                onToggleTag={handleToggleTag}
+                onUpdateStatus={handleUpdateStatus}
+                onResetProject={handleResetProject}
+                onOpenQualityControl={(p) => setQcModalProject(p)}
+                setHoveredPhoto={setHoveredPhoto}
+              />
+            )}
+
+            {viewMode === 'kanban' && (
+              <ProjectKanbanBoard
+                projects={filteredProjects}
+                studios={studios}
+                editors={editors}
+                revisions={revisions}
+                userRole={userRole}
+                onSelectProject={handleSelectProject}
+                onEditProject={handleEditProject}
+                onDeleteProject={handleDeleteProject}
+                onOpenQuickNote={handleOpenQuickNote}
+                onOpenWhatsAppShare={handleOpenWhatsAppShare}
+                onUpdateStatus={handleUpdateStatus}
+                onResetProject={handleResetProject}
+                setHoveredPhoto={setHoveredPhoto}
+              />
+            )}
+
+            {viewMode === 'timeline' && (
+              <ProjectsTimelineGanttView
+                projects={filteredProjects}
+                studios={studios}
+                editors={editors}
+                revisions={revisions}
+                userRole={userRole}
+                currentStudioId={currentStudioId}
+                onSelectProject={handleSelectProject}
+                onEditProject={handleEditProject}
+                onUpdateStatus={handleUpdateStatus}
+                onOpenQuickNote={handleOpenQuickNote}
+                onOpenWhatsAppShare={handleOpenWhatsAppShare}
+                onOpenQualityControl={(p) => setQcModalProject(p)}
+                onResetProject={handleResetProject}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {/* 4. Full Specifications Slide-Over Drawer */}
@@ -509,11 +665,27 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         editingProject={editingProject}
         studios={studios}
         editors={editors}
+        projects={projects}
         userRole={userRole}
         currentStudioId={currentStudioId}
       />
 
-      {/* 6. Quick Note Logger Modal */}
+      {/* 6. SAP QM Quality Control Gatekeeper Modal */}
+      {qcModalProject && (
+        <ProjectQualityControlModal
+          isOpen={!!qcModalProject}
+          onClose={() => setQcModalProject(null)}
+          project={qcModalProject}
+          onUpdateProject={async (id, updates) => {
+            await onUpdateProject(id, updates);
+            setQcModalProject(prev => prev ? ({ ...prev, ...updates }) : null);
+            triggerToast('Quality Control Updated', 'QC milestone inspection status saved.');
+          }}
+          userRole={userRole}
+        />
+      )}
+
+      {/* 7. Quick Note Logger Modal */}
       <ProjectQuickNoteModal
         project={quickNoteProject}
         isOpen={isQuickNoteModalOpen}
@@ -719,6 +891,17 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 15. Mobile Floating Status Navigator & Touch-Swipe Indicator */}
+      <MobileStatusSwipeNavigator
+        statusFilter={statusFilter}
+        setStatusFilter={(newStatus) => {
+          setSwipeTransitionDirection(null);
+          setStatusFilter(newStatus);
+        }}
+        projects={projects}
+        swipeFeedback={swipeFeedback}
+      />
 
     </div>
   );

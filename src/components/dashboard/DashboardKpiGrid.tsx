@@ -16,6 +16,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { formatINR } from '../../utils';
 
 interface DashboardKpiGridProps {
   totalProjectsCount: number;
@@ -97,11 +98,11 @@ export default function DashboardKpiGrid({
     {
       id: 'gross-revenue',
       title: 'Gross Revenue Contracts',
-      value: `₹${totalRevenue.toLocaleString('en-IN')}`,
+      value: formatINR(totalRevenue),
       unit: '',
       sub: `Across ${totalProjectsCount} contracted wedding films`,
       progress: 100,
-      badge: `₹${Math.round(totalRevenue / Math.max(1, totalProjectsCount)).toLocaleString('en-IN')} / film avg`,
+      badge: `${formatINR(Math.round(totalRevenue / Math.max(1, totalProjectsCount)))} / film avg`,
       badgeColor: 'bg-gold-500/15 text-gold-300 border-gold-500/30',
       icon: TrendingUp,
       iconBg: 'bg-gold-500/15 text-gold-400 border-gold-500/30',
@@ -113,7 +114,7 @@ export default function DashboardKpiGrid({
     {
       id: 'outstanding-balance',
       title: 'Receivables Outstanding',
-      value: `₹${totalOutstandingBalance.toLocaleString('en-IN')}`,
+      value: formatINR(totalOutstandingBalance),
       unit: '',
       sub: `${projectsWithOutstandingBalanceCount} studio partners with balance`,
       progress: totalRevenue > 0 ? Math.min(100, Math.round((totalOutstandingBalance / totalRevenue) * 100)) : 0,
@@ -145,7 +146,7 @@ export default function DashboardKpiGrid({
     {
       id: 'total-profit',
       title: 'Net Profit Yield',
-      value: `₹${totalProfit.toLocaleString('en-IN')}`,
+      value: formatINR(totalProfit),
       unit: '',
       sub: `${profitMargin}% overall studio profit margin`,
       progress: Math.min(100, Math.max(0, Math.round(Number(profitMargin)))),
@@ -161,9 +162,9 @@ export default function DashboardKpiGrid({
     {
       id: 'total-expenses',
       title: 'Operational Cost Outflow',
-      value: `₹${totalExpenses.toLocaleString('en-IN')}`,
+      value: formatINR(totalExpenses),
       unit: '',
-      sub: `₹${manualExpensesTotal.toLocaleString('en-IN')} overhead & hard disks`,
+      sub: `${formatINR(manualExpensesTotal)} overhead & hard disks`,
       progress: totalRevenue > 0 ? Math.min(100, Math.round((totalExpenses / totalRevenue) * 100)) : 0,
       badge: `${totalRevenue > 0 ? Math.round((totalExpenses / totalRevenue) * 100) : 0}% of Bookings`,
       badgeColor: 'bg-red-500/15 text-red-300 border-red-500/30',
