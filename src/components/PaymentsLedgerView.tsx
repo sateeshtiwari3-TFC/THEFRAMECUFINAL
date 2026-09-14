@@ -13,7 +13,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { PaymentHistory, Project, Studio, Editor, Expense } from '../types';
+import { PaymentHistory, Project, Studio, Editor, Expense, UserProfile } from '../types';
 import ProjectProfitMarginD3Chart from './ProjectProfitMarginD3Chart';
 
 // Modular Sub-Components
@@ -24,6 +24,7 @@ import LedgerStudiosTab from './ledger/LedgerStudiosTab';
 import LedgerEditorsTab from './ledger/LedgerEditorsTab';
 import LedgerExpensesTab from './ledger/LedgerExpensesTab';
 import LedgerAuditUtility, { AuditReportItem, AuditReport } from './ledger/LedgerAuditUtility';
+import EditorLedgerView from './ledger/EditorLedgerView';
 
 // Modals
 import PaymentRecordModal from './ledger/PaymentRecordModal';
@@ -39,6 +40,7 @@ interface PaymentsLedgerViewProps {
   editors: Editor[];
   expenses?: Expense[];
   userRole?: string;
+  currentUser?: UserProfile | null;
   onLogPayment: (payment: Omit<PaymentHistory, 'id' | 'createdAt'>) => Promise<void>;
   onUpdatePayment: (id: string, updates: Partial<PaymentHistory>) => Promise<void>;
   onDeletePayment: (id: string) => Promise<void>;
@@ -56,6 +58,7 @@ export default function PaymentsLedgerView({
   editors = [],
   expenses = [],
   userRole = 'admin',
+  currentUser = null,
   onLogPayment,
   onUpdatePayment,
   onDeletePayment,
@@ -410,6 +413,54 @@ export default function PaymentsLedgerView({
     link.click();
     document.body.removeChild(link);
   };
+
+  // If logged in as an EDITOR, render the specialized, redesigned Editor Ledger View
+  if (userRole === 'editor') {
+    const matchedEditor: Editor | null = editors.find(e => 
+      (currentUser?.editorId && e.id === currentUser.editorId) ||
+      (currentUser?.email && e.email?.toLowerCase() === currentUser.email.toLowerCase()) ||
+      (currentUser?.name && e.name?.toLowerCase() === currentUser.name.toLowerCase())
+    ) || (currentUser?.editorId ? {
+      id: currentUser.editorId,
+      name: currentUser.name || 'Editor',
+      email: currentUser.email || '',
+      phone: '',
+      joinedDate: new Date().toISOString().slice(0, 10),
+      rating: 5.0,
+      specialties: ['Cinematic Wedding Highlights']
+    } : null);
+
+    const safeCurrentUser: UserProfile = currentUser || {
+      uid: matchedEditor?.id || 'editor-current',
+      name: matchedEditor?.name || 'Video Editor',
+      email: matchedEditor?.email || '',
+      role: 'editor',
+      editorId: matchedEditor?.id || 'editor-current',
+      createdAt: new Date().toISOString()
+    };
+
+    return (
+      <div className="space-y-6">
+        <EditorLedgerView
+          currentUser={safeCurrentUser}
+          currentEditor={matchedEditor}
+          projects={projects}
+          payments={payments}
+          studios={studios}
+          onViewReceipt={(p) => setViewingReceipt(p)}
+        />
+
+        {/* View Receipt Modal for Editor */}
+        <PaymentReceiptModal
+          receipt={viewingReceipt}
+          onClose={() => setViewingReceipt(null)}
+          projects={projects}
+          studios={studios}
+          editors={editors}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20">

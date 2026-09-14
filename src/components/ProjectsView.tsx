@@ -328,6 +328,94 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
     });
   }, [projects, searchQuery, studioFilter, statusFilter, priorityFilter, tagFilter, deadlineFilter, sortBy]);
 
+  // Kanban view projects computation: displays all projects across their respective workflow columns (not restricted to a single status tab)
+  const kanbanProjects = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return projects.filter((project) => {
+      // Studio filter
+      if (studioFilter !== 'all' && project.studioId !== studioFilter) {
+        return false;
+      }
+
+      // Priority filter
+      if (priorityFilter !== 'all' && project.priority !== priorityFilter) {
+        return false;
+      }
+
+      // Tag filter
+      if (tagFilter !== 'all') {
+        if (!project.tags || !project.tags.includes(tagFilter)) {
+          return false;
+        }
+      }
+
+      // Deadline & Urgency filter
+      if (deadlineFilter !== 'all') {
+        const urgency = calculateUrgency(project.deliveryDate, project.status);
+        if (deadlineFilter === 'overdue') {
+          if (urgency.urgencyLevel !== 'overdue') return false;
+        } else if (deadlineFilter === 'critical') {
+          if (urgency.urgencyLevel !== 'critical' && urgency.urgencyLevel !== 'due_today' && urgency.urgencyLevel !== 'overdue') return false;
+        } else if (deadlineFilter === 'due_7_days') {
+          if (!project.deliveryDate || ['delivered', 'closed'].includes(project.status)) return false;
+          if (urgency.daysRemaining === null || urgency.daysRemaining > 7) return false;
+        }
+      }
+
+      // Search Query filter
+      if (query) {
+        const matchName = (project.projectName || '').toLowerCase().includes(query);
+        const matchCouple = (project.coupleName || '').toLowerCase().includes(query);
+        const matchId = (project.id || '').toLowerCase().includes(query);
+        const matchStudio = (project.studioName || '').toLowerCase().includes(query);
+        const matchEditor = (project.assignedEditorName || '').toLowerCase().includes(query);
+        const matchNotes = (project.notes || '').toLowerCase().includes(query);
+        if (!matchName && !matchCouple && !matchId && !matchStudio && !matchEditor && !matchNotes) {
+          return false;
+        }
+      }
+
+      return true;
+    }).sort((a, b) => {
+      if (sortBy === 'priority' || sortBy === 'priority_asc') {
+        const pa = PRIORITY_ORDER[a.priority || 'medium'] ?? 2;
+        const pb = PRIORITY_ORDER[b.priority || 'medium'] ?? 2;
+        if (pa !== pb) return pa - pb;
+        const da = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
+        const db = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
+        return da - db;
+      }
+      if (sortBy === 'delivery_asc') {
+        const da = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 9999999999999;
+        const db = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 9999999999999;
+        return da - db;
+      }
+      if (sortBy === 'delivery_desc') {
+        const da = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 0;
+        const db = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 0;
+        return db - da;
+      }
+      if (sortBy === 'shoot_desc') {
+        const sa = a.shootDate ? new Date(a.shootDate).getTime() : 0;
+        const sb = b.shootDate ? new Date(b.shootDate).getTime() : 0;
+        return sb - sa;
+      }
+      if (sortBy === 'amount_desc') {
+        return (Number(b.projectAmount) || 0) - (Number(a.projectAmount) || 0);
+      }
+      if (sortBy === 'balance_desc') {
+        const balA = Math.max(0, (Number(a.projectAmount) || 0) - (Number(a.advancePayment) || 0));
+        const balB = Math.max(0, (Number(b.projectAmount) || 0) - (Number(b.advancePayment) || 0));
+        return balB - balA;
+      }
+      if (sortBy === 'name_asc') {
+        return (a.projectName || a.coupleName || '').localeCompare(b.projectName || b.coupleName || '');
+      }
+      return 0;
+    });
+  }, [projects, searchQuery, studioFilter, priorityFilter, tagFilter, deadlineFilter, sortBy]);
+
   // Status Updater
   const handleUpdateStatus = async (projectId: string, status: ProjectStatus) => {
     try {
@@ -492,16 +580,18 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         userRole={userRole}
       />
 
-      {/* 3. Dedicated Status Tabs Strip with Quick Stage Switching */}
-      <ProjectStatusTabsStrip
-        statusFilter={statusFilter}
-        setStatusFilter={(newStatus) => {
-          setSwipeTransitionDirection(null);
-          setStatusFilter(newStatus);
-        }}
-        projects={projects}
-        totalFilteredCount={filteredProjects.length}
-      />
+      {/* 3. Dedicated Status Tabs Strip with Quick Stage Switching - Only show in Grid/Table/Timeline views, not in Kanban since Kanban already displays all stages */}
+      {viewMode !== 'kanban' && (
+        <ProjectStatusTabsStrip
+          statusFilter={statusFilter}
+          setStatusFilter={(newStatus) => {
+            setSwipeTransitionDirection(null);
+            setStatusFilter(newStatus);
+          }}
+          projects={projects}
+          totalFilteredCount={filteredProjects.length}
+        />
+      )}
 
       {/* 4. Primary Content Views: Grid / Table / Kanban with Mobile Touch-Swipe Gesture */}
       <div 
@@ -575,7 +665,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
 
             {viewMode === 'kanban' && (
               <ProjectKanbanBoard
-                projects={filteredProjects}
+                projects={kanbanProjects}
                 studios={studios}
                 editors={editors}
                 revisions={revisions}

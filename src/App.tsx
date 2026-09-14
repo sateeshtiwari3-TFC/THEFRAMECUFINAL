@@ -1823,6 +1823,7 @@ export default function App() {
             editors={editors}
             expenses={expenses}
             userRole={currentUser?.role || 'admin'}
+            currentUser={currentUser}
             onLogPayment={handleLogPayment}
             onUpdatePayment={handleUpdatePayment}
             onDeletePayment={handleDeletePayment}
