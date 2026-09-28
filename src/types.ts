@@ -105,6 +105,24 @@ export interface Project {
 
   // Supabase Reference Photos
   referencePhotos?: ProjectReferencePhoto[];
+
+  // Client Deliverables & Deliverable Items
+  deliverableItems?: ProjectDeliverableItem[];
+}
+
+export interface ProjectDeliverableItem {
+  id: string;
+  title: string;
+  category: 'film' | 'teaser' | 'reel' | 'raw' | 'stills' | 'document' | 'other';
+  format?: string; // e.g. "4K UHD 60fps", "ProRes 422", "1080p Full HD"
+  status: 'ready' | 'processing' | 'queued' | 'delivered';
+  downloadUrl?: string;
+  previewVideoUrl?: string;
+  fileSize?: string; // e.g. "4.8 GB"
+  duration?: string; // e.g. "18:42"
+  resolution?: string; // e.g. "3840 x 2160"
+  notes?: string;
+  updatedAt?: string;
 }
 
 export interface ProjectReferencePhoto {
@@ -212,6 +230,7 @@ export interface Editor {
   notes?: string;
   bio?: string;
   specialties?: string[];
+  specialty?: string;
   experienceYears?: number;
   showcaseShots?: EditorShowcaseShot[];
 }

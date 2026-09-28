@@ -21,7 +21,8 @@ import {
   Sparkles,
   Bell,
   BellRing,
-  AlertTriangle
+  AlertTriangle,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useFirestoreServerTime } from '../hooks/useFirestoreServerTime';
@@ -29,6 +30,23 @@ import LuxuryAnalogClock from './common/LuxuryAnalogClock';
 import { useDeadlineAlarms } from '../hooks/useDeadlineAlarms';
 import DeadlineAlarmsModal from './common/DeadlineAlarmsModal';
 import { Project } from '../types';
+
+export interface TimezoneConfig {
+  code: string;
+  name: string;
+  timeZone: string;
+  offset: string;
+  flag: string;
+  region: string;
+}
+
+export const SUPPORTED_TIMEZONES: TimezoneConfig[] = [
+  { code: 'IST', name: 'India', timeZone: 'Asia/Kolkata', offset: 'UTC+5:30', flag: '🇮🇳', region: 'Studio HQ' },
+  { code: 'GMT', name: 'London / GMT', timeZone: 'Europe/London', offset: 'UTC+0', flag: '🇬🇧', region: 'UK / Europe' },
+  { code: 'EST', name: 'New York', timeZone: 'America/New_York', offset: 'UTC-5', flag: '🇺🇸', region: 'US East' },
+  { code: 'PST', name: 'Los Angeles', timeZone: 'America/Los_Angeles', offset: 'UTC-8', flag: '🇺🇸', region: 'US West' },
+  { code: 'DXB', name: 'Dubai', timeZone: 'Asia/Dubai', offset: 'UTC+4', flag: '🇦🇪', region: 'Middle East' },
+];
 
 interface CityPreset {
   name: string;
@@ -123,17 +141,17 @@ export default function LoginWeatherClockWidget({
       });
   }, [alarms, activeTriggeredAlarms]);
 
-  // Alternative Clock Visual: 'analog' luxury rotating circular face vs 'digital'
-  const [clockVisualMode, setClockVisualMode] = useState<'analog' | 'digital'>(() => {
+  // Alternative Clock Visual: 'analog' luxury rotating circular face vs 'digital' vs 'dual' master
+  const [clockVisualMode, setClockVisualMode] = useState<'analog' | 'digital' | 'dual'>(() => {
     try {
-      return (localStorage.getItem('framecut_clock_visual_mode') as 'analog' | 'digital') || 'analog';
+      return (localStorage.getItem('framecut_clock_visual_mode') as 'analog' | 'digital' | 'dual') || 'dual';
     } catch {
-      return 'analog';
+      return 'dual';
     }
   });
   const [showHorologyModal, setShowHorologyModal] = useState<boolean>(false);
 
-  const handleSetClockVisualMode = (mode: 'analog' | 'digital') => {
+  const handleSetClockVisualMode = (mode: 'analog' | 'digital' | 'dual') => {
     setClockVisualMode(mode);
     try {
       localStorage.setItem('framecut_clock_visual_mode', mode);
@@ -141,6 +159,73 @@ export default function LoginWeatherClockWidget({
       console.error(e);
     }
   };
+
+  // User-selectable multi-timezone configuration (IST, GMT, EST, PST, DXB)
+  const [activeTimezoneCode, setActiveTimezoneCode] = useState<string>(() => {
+    try {
+      return localStorage.getItem('framecut_active_timezone') || 'IST';
+    } catch {
+      return 'IST';
+    }
+  });
+
+  const activeTimezone = useMemo(() => {
+    return SUPPORTED_TIMEZONES.find((tz) => tz.code === activeTimezoneCode) || SUPPORTED_TIMEZONES[0];
+  }, [activeTimezoneCode]);
+
+  const handleSelectTimezone = (code: string) => {
+    setActiveTimezoneCode(code);
+    try {
+      localStorage.setItem('framecut_active_timezone', code);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Convert server TrueTime to the active timezone
+  const getZonedDate = (baseDate: Date, timeZone: string): Date => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: false,
+      }).formatToParts(baseDate);
+
+      const p: Record<string, string> = {};
+      for (const part of parts) {
+        p[part.type] = part.value;
+      }
+
+      const year = parseInt(p.year, 10);
+      const month = parseInt(p.month, 10) - 1;
+      const day = parseInt(p.day, 10);
+      let hour = parseInt(p.hour, 10);
+      if (hour === 24) hour = 0;
+      const minute = parseInt(p.minute, 10);
+      const second = parseInt(p.second, 10);
+      const ms = baseDate.getMilliseconds();
+
+      return new Date(year, month, day, hour, minute, second, ms);
+    } catch (err) {
+      console.error('Timezone conversion error:', err);
+      return baseDate;
+    }
+  };
+
+  // Active time reflecting selected timezone
+  const displayTime = useMemo(() => {
+    return getZonedDate(time, activeTimezone.timeZone);
+  }, [time, activeTimezone.timeZone]);
+
+  // Studio HQ local reference time (IST)
+  const studioIstTime = useMemo(() => {
+    return getZonedDate(time, 'Asia/Kolkata');
+  }, [time]);
   
   // Load saved location from localStorage or default to Forest
   const [selectedCity, setSelectedCity] = useState<CityPreset>(() => {
@@ -304,23 +389,23 @@ export default function LoginWeatherClockWidget({
     setSearchResults([]);
   };
 
-  const formattedDate = time.toLocaleDateString('en-GB', {
+  const formattedDate = displayTime.toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'long'
   });
 
-  const formattedTime = time.toLocaleTimeString('en-US', {
+  const formattedTime = displayTime.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: true
   });
 
-  const hoursRaw = time.getHours();
+  const hoursRaw = displayTime.getHours();
   const hours12 = hoursRaw % 12 || 12;
   const hoursStr = String(hours12).padStart(2, '0');
-  const minutesStr = String(time.getMinutes()).padStart(2, '0');
-  const secondsStr = String(time.getSeconds()).padStart(2, '0');
+  const minutesStr = String(displayTime.getMinutes()).padStart(2, '0');
+  const secondsStr = String(displayTime.getSeconds()).padStart(2, '0');
   const ampm = hoursRaw >= 12 ? 'PM' : 'AM';
 
   // User-configurable analog clock size scale ('standard' | 'large' | 'giant')
@@ -344,22 +429,87 @@ export default function LoginWeatherClockWidget({
   // Compute responsive pixel diameter (large is 122px, giant is 144px, standard is 96px)
   const analogDialDiameter = analogClockScale === 'giant' ? 144 : analogClockScale === 'large' ? 122 : 96;
 
+  // Cinematography Lighting & Sun Position Telemetry
+  const cinemaLighting = useMemo(() => {
+    const h = time.getHours();
+    const m = time.getMinutes();
+    const totalMin = h * 60 + m;
+
+    if (totalMin >= 300 && totalMin < 375) {
+      return {
+        phase: 'Dawn / Blue Hour',
+        tempK: '7500K - 9000K',
+        badge: 'Moody Dawn 7500K',
+        badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/15',
+        advice: 'Soft blue ambient · Prime for misty landscape B-roll'
+      };
+    } else if (totalMin >= 375 && totalMin < 450) {
+      return {
+        phase: 'Morning Golden Hour',
+        tempK: '3200K Soft Gilt',
+        badge: 'Golden Hour 3200K',
+        badgeColor: 'text-amber-300 border-amber-500/40 bg-amber-500/15',
+        advice: 'Directional warm sunlight · Low flare angle · Prime couple portraits'
+      };
+    } else if (totalMin >= 450 && totalMin < 1020) {
+      return {
+        phase: 'Daylight Cinema',
+        tempK: '5600K Standard',
+        badge: 'Daylight 5600K',
+        badgeColor: 'text-sky-300 border-sky-500/40 bg-sky-500/15',
+        advice: '5600K standard light · ND Filters recommended for f/1.4 - f/2.0'
+      };
+    } else if (totalMin >= 1020 && totalMin < 1110) {
+      return {
+        phase: 'Sunset Golden Hour',
+        tempK: '2800K - 3400K Warm',
+        badge: 'Peak Golden Hour',
+        badgeColor: 'text-gold-300 border-gold-400/50 bg-gold-500/20',
+        advice: 'Warm rim-light · Optimal couple silhouettes & drone arcs'
+      };
+    } else if (totalMin >= 1110 && totalMin < 1170) {
+      return {
+        phase: 'Blue Hour Twilight',
+        tempK: '8000K Cobalt',
+        badge: 'Twilight 8000K',
+        badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/15',
+        advice: 'Deep cobalt sky · Blend ambient daylight with fairy tungsten lights'
+      };
+    } else {
+      return {
+        phase: 'Night Wedding Cinema',
+        tempK: '3200K Tungsten & RGB',
+        badge: 'Night Production',
+        badgeColor: 'text-purple-300 border-purple-500/40 bg-purple-500/15',
+        advice: 'Low-light ceremony · Fast primes & rim lighting recommended'
+      };
+    }
+  }, [time]);
+
   return (
     <div className={`w-full ${layoutMode === 'vertical' ? 'max-w-[320px] sm:max-w-[360px]' : 'max-w-3xl sm:max-w-4xl'} mx-auto select-none relative transition-all duration-300`}>
       {/* HORIZONTAL WIDE DASHBOARD STUDIO CHRONOMETER & WEATHER BAR */}
       {layoutMode === 'horizontal' ? (
-        <div className="rounded-2xl sm:rounded-3xl bg-charcoal-900/90 backdrop-blur-2xl border border-gold-500/30 p-3 sm:p-4 shadow-[0_15px_35px_rgba(0,0,0,0.7)] relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-3.5 sm:gap-5 group hover:border-gold-400/50 transition-all duration-300 w-full min-w-0">
-          {/* Subtle warm amber ambient banner highlight */}
-          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-gold-400/40 to-transparent pointer-events-none" />
+        <div className="rounded-3xl bg-gradient-to-br from-charcoal-950 via-[#13110d] to-luxury-green-950/30 border border-gold-500/35 p-3.5 sm:p-4.5 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_35px_rgba(212,175,55,0.06)] relative overflow-hidden flex flex-col xl:flex-row items-center justify-between gap-4 group hover:border-gold-400/60 transition-all duration-300 w-full min-w-0">
+          
+          {/* 24K Gold Specular Micro-Bevel Lip */}
+          <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-gold-400/60 to-transparent pointer-events-none" />
+          
+          {/* Corner Precision Micro-Studs */}
+          <div className="absolute top-2 left-2 w-1.5 h-1.5 rounded-full border border-gold-500/30 bg-charcoal-900/90 shadow-inner" />
+          <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full border border-gold-500/30 bg-charcoal-900/90 shadow-inner" />
+          <div className="absolute bottom-2 left-2 w-1.5 h-1.5 rounded-full border border-gold-500/30 bg-charcoal-900/90 shadow-inner" />
+          <div className="absolute bottom-2 right-2 w-1.5 h-1.5 rounded-full border border-gold-500/30 bg-charcoal-900/90 shadow-inner" />
 
-          {/* SECTION 1: MASTER REALTIME CLOCK (ANALOG ROTATING LUXURY FACE OR DIGITAL) */}
-          <div className="flex items-center space-x-3 sm:space-x-4 shrink-0 min-w-0 w-full sm:w-auto justify-center sm:justify-start">
-            {clockVisualMode === 'analog' ? (
-              /* LUXURY ROTATING ANALOG WATCH VISUALIZATION */
-              <>
+          {/* SECTION 1: MASTER TIMEKEEPER (ANALOG ROTATING LUXURY FACE / DIGITAL / DUAL) */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4 shrink-0 min-w-0 w-full xl:w-auto justify-center sm:justify-start">
+            
+            {/* 1A: ANALOG DIAL (Rendered when in 'analog' or 'dual' mode) */}
+            {(clockVisualMode === 'analog' || clockVisualMode === 'dual') && (
+              <div className="relative shrink-0 flex items-center justify-center p-1">
                 <LuxuryAnalogClock 
-                  time={time} 
-                  size={analogDialDiameter} 
+                  time={displayTime} 
+                  size={clockVisualMode === 'dual' ? Math.min(analogDialDiameter, 110) : analogDialDiameter} 
                   isSynced={isSynced} 
                   isSyncing={isSyncing} 
                   isGlowing={hasActiveGlow}
@@ -367,248 +517,302 @@ export default function LoginWeatherClockWidget({
                   alarmMarkers={alarmMarkers}
                   onClick={() => setShowHorologyModal(true)} 
                 />
+              </div>
+            )}
 
-                <div className="flex flex-col min-w-0 justify-center">
-                  {/* Digital Counterpart & Inspect Button */}
-                  <div className="flex items-baseline space-x-1.5">
-                    <span className="text-xl sm:text-2xl font-black font-mono tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-                      {hoursStr}:{minutesStr}
-                    </span>
-                    <span className="text-xs sm:text-sm font-bold font-mono text-gold-400">
-                      :{secondsStr}
-                    </span>
-                    <span className="px-1.5 py-0.2 rounded bg-gold-500/20 border border-gold-400/40 text-[9px] sm:text-[10px] font-mono font-extrabold text-gold-300">
-                      {ampm}
-                    </span>
+            {/* 1B: DIGITAL CHRONOMETER READOUT & HOROLOGY SPECS */}
+            <div className="flex flex-col min-w-0 justify-center">
+              
+              {/* High-Contrast Crystal-Clear Digital Time Display */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-baseline font-mono select-none">
+                  {/* Hours & Minutes */}
+                  <span className={`${
+                    clockVisualMode === 'digital' 
+                      ? 'text-3xl sm:text-4xl lg:text-5xl' 
+                      : 'text-2xl sm:text-3xl lg:text-3xl'
+                  } font-black tracking-tight text-white drop-shadow-[0_2px_14px_rgba(255,255,255,0.35)]`}>
+                    {hoursStr}
+                  </span>
+                  
+                  {/* Pulsing Luminous Colon */}
+                  <span className={`${
+                    clockVisualMode === 'digital' 
+                      ? 'text-3xl sm:text-4xl lg:text-5xl' 
+                      : 'text-2xl sm:text-3xl lg:text-3xl'
+                  } font-black text-gold-400 mx-0.5 animate-pulse drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]`}>
+                    :
+                  </span>
 
-                    {/* Inspect Watchmaker Dial Modal Button */}
-                    <button
-                      type="button"
-                      onClick={() => setShowHorologyModal(true)}
-                      className="p-1 rounded-md bg-white/5 hover:bg-gold-500/20 text-zinc-400 hover:text-gold-300 transition-colors border border-white/10 ml-1 cursor-pointer"
-                      title="Inspect Luxury Studio Chronometer in Detail"
-                    >
-                      <Maximize2 className="w-3 h-3" />
-                    </button>
-                  </div>
+                  {/* Minutes */}
+                  <span className={`${
+                    clockVisualMode === 'digital' 
+                      ? 'text-3xl sm:text-4xl lg:text-5xl' 
+                      : 'text-2xl sm:text-3xl lg:text-3xl'
+                  } font-black tracking-tight text-white drop-shadow-[0_2px_14px_rgba(255,255,255,0.35)]`}>
+                    {minutesStr}
+                  </span>
 
-                  {/* Full Date String & Firestore Server Sync Indicator */}
-                  <div className="flex items-center space-x-2 text-[10px] sm:text-[11px] font-mono text-zinc-300 font-medium truncate mt-0.5">
-                    <span className="shrink-0">{formattedDate}</span>
-                    <span className="text-zinc-600 shrink-0">•</span>
-                    <button
-                      type="button"
-                      onClick={() => syncNow()}
-                      className="text-[9px] text-emerald-400/90 hover:text-emerald-300 flex items-center space-x-1 cursor-pointer transition-colors shrink-0"
-                      title={`Firestore Server TrueTime Synced across studio workstations (Offset: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms, Ping: ${latencyMs}ms). Click to calibrate now.`}
-                    >
-                      <Radio className={`w-2.5 h-2.5 text-emerald-400 shrink-0 ${isSyncing ? 'animate-spin' : 'animate-pulse'}`} />
-                      <span className="truncate">
-                        {isSyncing ? 'Syncing...' : isSynced ? 'TrueTime Synced' : 'Sync Server'}
-                      </span>
-                    </button>
-                  </div>
+                  {/* Seconds Ticker */}
+                  <span className={`${
+                    clockVisualMode === 'digital' 
+                      ? 'text-base sm:text-xl lg:text-2xl' 
+                      : 'text-xs sm:text-sm lg:text-base'
+                  } font-bold text-gold-400 ml-1 font-mono drop-shadow-[0_0_8px_rgba(245,158,11,0.7)]`}>
+                    :{secondsStr}
+                  </span>
 
-                  {/* Segmented Mode Switcher & Deadline Alarms Button */}
-                  <div className="flex items-center space-x-1 mt-1.5 flex-wrap gap-y-1">
-                    <button
-                      type="button"
-                      onClick={() => handleSetClockVisualMode('analog')}
-                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gradient-to-r from-gold-500/30 to-amber-500/20 border border-gold-400/60 text-gold-300 shadow-sm flex items-center space-x-1 cursor-pointer"
-                      title="Active: Luxury Rotating Analog Dial"
-                    >
-                      <Compass className="w-2.5 h-2.5 text-gold-400" />
-                      <span>Analog</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSetClockVisualMode('digital')}
-                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent flex items-center space-x-1 transition-all cursor-pointer"
-                      title="Switch to Large Digital Display"
-                    >
-                      <Clock className="w-2.5 h-2.5 text-zinc-400" />
-                      <span>Digital</span>
-                    </button>
-
-                    {/* Clock Dial Size Toggle (Bada / Giant / Standard) */}
-                    <button
-                      type="button"
-                      onClick={() => handleSetClockScale(analogClockScale === 'standard' ? 'large' : analogClockScale === 'large' ? 'giant' : 'standard')}
-                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gold-500/15 hover:bg-gold-500/25 border border-gold-400/40 text-gold-300 flex items-center space-x-1 cursor-pointer transition-all"
-                      title={`Clock Size: Standard (96px), Large (122px), Giant (144px). Currently: ${analogClockScale}. Click to cycle.`}
-                    >
-                      <Maximize2 className="w-2.5 h-2.5 text-gold-400" />
-                      <span>{analogClockScale === 'giant' ? 'Bada+' : analogClockScale === 'large' ? 'Bada' : 'Std'}</span>
-                    </button>
-
-                    {/* Deadline Visual Alarms Configuration Button */}
-                    <button
-                      type="button"
-                      onClick={() => setShowAlarmsModal(true)}
-                      className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold flex items-center space-x-1 transition-all cursor-pointer ${
-                        hasActiveGlow
-                          ? 'bg-amber-500/35 border border-amber-300 text-amber-200 animate-pulse shadow-[0_0_10px_rgba(245,158,11,0.6)]'
-                          : alarms.filter((a) => a.enabled).length > 0
-                          ? 'bg-gold-500/15 border border-gold-400/40 text-gold-300 hover:bg-gold-500/25'
-                          : 'text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent'
-                      }`}
-                      title="Set visual alarms for project deadlines that glow on the analog clock face"
-                    >
-                      <BellRing className={`w-2.5 h-2.5 ${hasActiveGlow ? 'text-amber-300 animate-bounce' : 'text-gold-400'}`} />
-                      <span>
-                        {hasActiveGlow 
-                          ? `Glow Active (${activeTriggeredAlarms.length})` 
-                          : `Alarms (${alarms.filter((a) => a.enabled).length})`}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Active Deadline Alarm Warning Banner with Instant Dismiss */}
-                  {hasActiveGlow && activeTriggeredAlarms.length > 0 && (
-                    <div className="flex items-center space-x-1.5 mt-1.5 px-2 py-0.5 rounded-lg bg-amber-500/25 border border-amber-400/60 text-[9px] font-mono text-amber-200 animate-pulse">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
-                      <span className="truncate max-w-[130px] sm:max-w-[170px] font-bold">
-                        ⚠️ {activeTriggeredAlarms[0]?.projectTitle}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => dismissAlarm(activeTriggeredAlarms[0]?.id)}
-                        className="ml-auto underline text-gold-300 hover:text-white shrink-0 cursor-pointer text-[8px]"
-                        title="Dismiss clock face glow"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
+                  {/* AM / PM Gilt Chamfered Badge */}
+                  <span className="ml-2 px-2 py-0.5 rounded-lg bg-gradient-to-b from-[#2e2413] via-[#1c170d] to-[#0e0c07] border border-gold-400/60 text-[10px] sm:text-xs font-mono font-black text-gold-300 shadow-sm self-center">
+                    {ampm}
+                  </span>
                 </div>
-              </>
-            ) : (
-              /* HIGH-CONTRAST DIGITAL CLOCK VISUALIZATION */
-              <>
-                {/* Clock Icon Capsule */}
+
+                {/* Inspect Watchmaker Loupe Button */}
                 <button
                   type="button"
                   onClick={() => setShowHorologyModal(true)}
-                  title="Master Studio Chronometer. Click to inspect analog dial & server sync."
-                  className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-gradient-to-br from-gold-500/20 to-amber-500/10 border border-gold-500/30 hover:border-gold-400/60 flex flex-col items-center justify-center text-gold-400 shrink-0 shadow-inner transition-all cursor-pointer group/clockbtn"
+                  className="p-1.5 rounded-xl bg-white/5 hover:bg-gold-500/20 text-zinc-400 hover:text-gold-300 transition-colors border border-white/10 cursor-pointer shadow-sm shrink-0 ml-1"
+                  title="Inspect Luxury Studio Chronometer Movement & Escapement"
                 >
-                  <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-gold-400 group-hover/clockbtn:scale-110 transition-transform" />
-                  <div className="flex items-center space-x-1 mt-0.5">
-                    <span className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-spin' : isSynced ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-400'}`} />
-                    <span className="text-[7px] sm:text-[8px] font-mono font-bold text-emerald-300">
-                      {isSyncing ? 'SYNC' : isSynced ? 'TRUE-T' : 'LIVE'}
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* In Digital Mode: Animated 60-Second Linear Track */}
+              {clockVisualMode === 'digital' && (
+                <div className="w-full max-w-[260px] sm:max-w-[320px] h-1.5 bg-black/60 rounded-full overflow-hidden border border-gold-500/20 my-1 shadow-inner">
+                  <motion.div 
+                    className="h-full bg-gradient-to-r from-amber-500 via-gold-400 to-amber-300 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"
+                    style={{ width: `${((displayTime.getSeconds() + displayTime.getMilliseconds() / 1000) / 60) * 100}%` }}
+                    transition={{ ease: "linear" }}
+                  />
+                </div>
+              )}
+
+              {/* Full Gregorian Date with Weekday */}
+              <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-300 font-medium truncate mt-0.5">
+                <span className="text-gold-300/90 font-bold shrink-0">
+                  {displayTime.toLocaleDateString('en-US', { weekday: 'short' })}
+                </span>
+                <span className="text-zinc-600 shrink-0">·</span>
+                <span className="shrink-0">{formattedDate}</span>
+                <span className="text-zinc-600 shrink-0">·</span>
+                
+                {/* Atomic Server TrueTime Sync Trigger */}
+                <button
+                  type="button"
+                  onClick={() => syncNow()}
+                  className="text-[9px] text-emerald-400/90 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                  title={`Atomic TrueTime Server Synced (Offset: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms, Ping: ${latencyMs}ms). Click to recalibrate.`}
+                >
+                  <Radio className={`w-2.5 h-2.5 text-emerald-400 shrink-0 ${isSyncing ? 'animate-spin' : 'animate-pulse'}`} />
+                  <span className="truncate">
+                    {isSyncing ? 'Calibrating...' : isSynced ? 'Atomic TrueTime' : 'Sync Clock'}
+                  </span>
+                </button>
+              </div>
+
+              {/* MULTI-TIMEZONE QUICK SWITCHER BAR (IST · GMT · EST · PST · DXB) */}
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-black/70 border border-gold-500/30 shadow-inner">
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 text-zinc-400">
+                    <Globe className="w-3 h-3 text-gold-400 shrink-0" />
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider hidden sm:inline">
+                      Zone:
                     </span>
                   </div>
+                  {SUPPORTED_TIMEZONES.map((tz) => {
+                    const isActive = tz.code === activeTimezone.code;
+                    return (
+                      <button
+                        key={tz.code}
+                        type="button"
+                        onClick={() => handleSelectTimezone(tz.code)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                          isActive
+                            ? 'bg-gradient-to-r from-gold-500/35 via-gold-400/25 to-amber-500/30 text-gold-200 border border-gold-400/60 shadow-sm'
+                            : 'text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent'
+                        }`}
+                        title={`${tz.name} (${tz.offset}) — ${tz.region}. Click to switch workstation clock.`}
+                      >
+                        <span className="text-[10px]">{tz.flag}</span>
+                        <span>{tz.code}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Active Zone Offset / Remote Client Delta */}
+                <span className="text-[9px] font-mono px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-gold-300 font-semibold shadow-sm flex items-center gap-1">
+                  <span className="text-zinc-400">{activeTimezone.offset}</span>
+                  <span>·</span>
+                  <span>{activeTimezone.region}</span>
+                  {activeTimezone.code !== 'IST' && (
+                    <span className="text-amber-300/90 font-bold ml-1 hidden sm:inline">
+                      (HQ: {studioIstTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })})
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {/* Refined Segmented Dial Selector Bar */}
+              <div className="flex items-center gap-1 mt-2 flex-wrap">
+                
+                {/* Segmented Mode Selector: [Analog] [Digital] [Dual] */}
+                <div className="inline-flex p-0.5 rounded-lg bg-black/60 border border-white/10 text-[9px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => handleSetClockVisualMode('analog')}
+                    className={`px-2 py-0.5 rounded transition-all cursor-pointer font-bold ${
+                      clockVisualMode === 'analog'
+                        ? 'bg-gold-500/25 text-gold-300 border border-gold-400/40 shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Analog
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetClockVisualMode('digital')}
+                    className={`px-2 py-0.5 rounded transition-all cursor-pointer font-bold ${
+                      clockVisualMode === 'digital'
+                        ? 'bg-gold-500/25 text-gold-300 border border-gold-400/40 shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Digital
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetClockVisualMode('dual')}
+                    className={`px-2 py-0.5 rounded transition-all cursor-pointer font-bold ${
+                      clockVisualMode === 'dual'
+                        ? 'bg-gold-500/25 text-gold-300 border border-gold-400/40 shadow-sm'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    Dual Chrono
+                  </button>
+                </div>
+
+                {/* Clock Dial Size Toggle (Std / Grande / Master) */}
+                <button
+                  type="button"
+                  onClick={() => handleSetClockScale(analogClockScale === 'standard' ? 'large' : analogClockScale === 'large' ? 'giant' : 'standard')}
+                  className="px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold bg-white/5 hover:bg-gold-500/20 border border-white/10 text-zinc-300 hover:text-gold-300 flex items-center gap-1 cursor-pointer transition-all"
+                  title={`Dial Scale: Standard (96px), Grande (122px), Master (144px). Currently: ${analogClockScale}.`}
+                >
+                  <Maximize2 className="w-2.5 h-2.5 text-gold-400" />
+                  <span>{analogClockScale === 'giant' ? 'Master (144mm)' : analogClockScale === 'large' ? 'Grande (122mm)' : 'Std (96mm)'}</span>
                 </button>
 
-                {/* Main Digital Time Numbers */}
-                <div className="flex flex-col min-w-0">
-                  <div className="flex items-baseline space-x-1">
-                    <span className="text-2xl sm:text-3xl lg:text-4xl font-black font-mono tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">
-                      {hoursStr}:{minutesStr}
-                    </span>
-                    <span className="text-sm sm:text-base font-bold font-mono text-gold-400">
-                      :{secondsStr}
-                    </span>
-                    <span className="ml-1.5 px-2 py-0.5 rounded-md bg-gold-500/20 border border-gold-400/40 text-[10px] sm:text-xs font-mono font-extrabold text-gold-300">
-                      {ampm}
-                    </span>
-                  </div>
+                {/* Deadline Visual Alarms Configuration Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowAlarmsModal(true)}
+                  className={`px-2 py-0.5 rounded-lg text-[9px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                    hasActiveGlow
+                      ? 'bg-amber-500/35 border border-amber-300 text-amber-200 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.6)]'
+                      : alarms.filter((a) => a.enabled).length > 0
+                      ? 'bg-gold-500/15 border border-gold-400/40 text-gold-300 hover:bg-gold-500/25'
+                      : 'text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-white/10'
+                  }`}
+                  title="Configure visual alarms for wedding delivery deadlines"
+                >
+                  <BellRing className={`w-2.5 h-2.5 ${hasActiveGlow ? 'text-amber-300 animate-bounce' : 'text-gold-400'}`} />
+                  <span>
+                    {hasActiveGlow 
+                      ? `⚠️ Alarm Glow (${activeTriggeredAlarms.length})` 
+                      : `Alarms (${alarms.filter((a) => a.enabled).length})`}
+                  </span>
+                </button>
+              </div>
 
-                  {/* Full Date String & Firestore Server Sync Indicator */}
-                  <div className="flex items-center space-x-2 text-[11px] sm:text-xs font-mono text-zinc-300 font-medium truncate mt-0.5">
-                    <span className="shrink-0">{formattedDate}</span>
-                    <span className="text-zinc-600 shrink-0">•</span>
-                    <button
-                      type="button"
-                      onClick={() => syncNow()}
-                      className="text-[9px] text-emerald-400/90 hover:text-emerald-300 flex items-center space-x-1 cursor-pointer transition-colors shrink-0"
-                      title={`Firestore Server TrueTime Synced across studio workstations (Offset: ${offsetMs >= 0 ? '+' : ''}${offsetMs}ms, Ping: ${latencyMs}ms). Click to calibrate now.`}
-                    >
-                      <Radio className={`w-2.5 h-2.5 text-emerald-400 shrink-0 ${isSyncing ? 'animate-spin' : 'animate-pulse'}`} />
-                      <span className="truncate">
-                        {isSyncing ? 'Syncing Server...' : isSynced ? 'Cloud Synced' : 'Sync Server'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Segmented Mode Switcher */}
-                  <div className="flex items-center space-x-1 mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSetClockVisualMode('analog')}
-                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 border border-transparent flex items-center space-x-1 transition-all cursor-pointer"
-                      title="Switch to Luxury Rotating Analog Dial"
-                    >
-                      <Compass className="w-2.5 h-2.5 text-gold-400" />
-                      <span>Analog</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSetClockVisualMode('digital')}
-                      className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-gradient-to-r from-gold-500/30 to-amber-500/20 border border-gold-400/60 text-gold-300 shadow-sm flex items-center space-x-1 cursor-pointer"
-                      title="Active: Digital Clock"
-                    >
-                      <Clock className="w-2.5 h-2.5 text-gold-400" />
-                      <span>Digital</span>
-                    </button>
-                  </div>
+              {/* Active Deadline Alarm Warning Banner */}
+              {hasActiveGlow && activeTriggeredAlarms.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-xl bg-amber-500/25 border border-amber-400/60 text-[10px] font-mono text-amber-200 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+                  <span className="truncate max-w-[150px] sm:max-w-[200px] font-bold">
+                    ⚠️ {activeTriggeredAlarms[0]?.projectTitle}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => dismissAlarm(activeTriggeredAlarms[0]?.id)}
+                    className="ml-auto underline text-gold-300 hover:text-white shrink-0 cursor-pointer text-[9px]"
+                  >
+                    Dismiss
+                  </button>
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Divider on tablet/desktop */}
-          <div className="hidden sm:block h-12 w-px bg-white/10 shrink-0" />
+          {/* Elegant Vertical Divider */}
+          <div className="hidden xl:block h-20 w-px bg-gradient-to-b from-transparent via-white/15 to-transparent shrink-0" />
 
-          {/* SECTION 2: STUDIO SHOOT LOCATION & WEATHER CAPSULE */}
-          <div className="flex flex-col sm:items-end space-y-1.5 min-w-0 w-full sm:w-auto">
-            {/* Top row: City Name & Change Button + Refresh */}
-            <div className="flex items-center justify-between sm:justify-end space-x-2 w-full">
+          {/* SECTION 2: CINEMATOGRAPHY LIGHTING & ATMOSPHERIC TELEMETRY */}
+          <div className="flex flex-col sm:items-end gap-1.5 min-w-0 w-full xl:w-auto">
+            
+            {/* Top row: Shoot Location & Live Refresh */}
+            <div className="flex items-center justify-between sm:justify-end gap-2 w-full">
               <button
                 type="button"
                 onClick={() => setShowLocationModal(true)}
-                className="flex items-center space-x-1 text-xs sm:text-sm font-bold text-white hover:text-gold-300 transition-colors cursor-pointer group/btn"
-                title="Change shoot location"
+                className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-white hover:text-gold-300 transition-colors cursor-pointer group/btn"
+                title="Change cinematography base location"
               >
-                <MapPin className="w-3.5 h-3.5 text-gold-400 shrink-0 group-hover/btn:scale-110 transition-transform" />
-                <span className="truncate max-w-[130px] sm:max-w-[170px]">{selectedCity.name}</span>
+                <div className="w-5 h-5 rounded-md bg-gold-500/15 border border-gold-500/30 flex items-center justify-center shrink-0">
+                  <MapPin className="w-3 h-3 text-gold-400 group-hover/btn:scale-110 transition-transform" />
+                </div>
+                <span className="truncate max-w-[140px] sm:max-w-[180px] font-display">{selectedCity.name}</span>
                 <ChevronDown className="w-3 h-3 text-zinc-400 shrink-0" />
               </button>
 
-              <button
-                type="button"
-                onClick={() => fetchWeather(selectedCity.lat, selectedCity.lon)}
-                className="p-1 sm:p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-zinc-400 hover:text-white transition-colors cursor-pointer border border-white/10 shrink-0"
-                title="Refresh live weather"
-              >
-                <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-gold-400' : ''}`} />
-              </button>
+              <div className="flex items-center gap-1">
+                <span className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold border ${cinemaLighting.badgeColor}`}>
+                  {cinemaLighting.badge}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => fetchWeather(selectedCity.lat, selectedCity.lon)}
+                  className="p-1 rounded-md bg-white/5 hover:bg-white/15 text-zinc-400 hover:text-white transition-colors cursor-pointer border border-white/10 shrink-0"
+                  title="Recalibrate live cinematography telemetry"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-gold-400' : ''}`} />
+                </button>
+              </div>
             </div>
 
-            {/* Middle row: Weather metric pills */}
-            <div className="flex items-center space-x-1 sm:space-x-1.5 text-[10px] sm:text-[11px] font-mono">
-              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-black/50 text-white border border-white/10 shrink-0">
+            {/* Middle row: High-contrast telemetry metrics */}
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-charcoal-900/90 text-white border border-white/10 shadow-inner">
                 {weather?.isNight ? <Moon className="w-3 h-3 text-sky-200" /> : <Sun className="w-3 h-3 text-amber-300" />}
                 <span className="font-bold">{weather ? `${weather.tempC}°C` : '24°C'}</span>
               </div>
 
-              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-black/50 text-white border border-white/10 shrink-0">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-charcoal-900/90 text-white border border-white/10 shadow-inner">
                 <Droplets className="w-3 h-3 text-sky-300" />
-                <span className="font-bold">{weather ? `${weather.humidity}%` : '65%'}</span>
+                <span className="font-bold">{weather ? `${weather.humidity}%` : '55%'}</span>
+                <span className="text-[9px] text-zinc-400 hidden sm:inline">RH</span>
               </div>
 
-              <div className="flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-black/50 text-white border border-white/10 shrink-0">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-charcoal-900/90 text-white border border-white/10 shadow-inner">
                 <Wind className="w-3 h-3 text-emerald-300" />
-                <span className="font-bold">{weather ? `${weather.windSpeedMs}m/s` : '3m/s'}</span>
+                <span className="font-bold">{weather ? `${weather.windSpeedMs}m/s` : '2.8m/s'}</span>
+                <span className="text-[9px] text-emerald-400/90 font-bold hidden sm:inline">
+                  {Number(weather?.windSpeedMs || 2.8) <= 5.0 ? '· Drone Safe' : '· Wind Caution'}
+                </span>
               </div>
             </div>
 
-            {/* Bottom row: Shoot condition advice */}
-            <div className="text-[10px] text-gold-300/90 font-mono truncate max-w-[240px] sm:max-w-[280px] text-left sm:text-right">
-              🎬 {weather?.shootAdvice || 'Optimal Natural Light for Outdoor Shoots'}
+            {/* Bottom row: Director's Lighting & Production Directive */}
+            <div className="text-[10px] text-gold-300/90 font-mono truncate max-w-[280px] sm:max-w-[340px] text-left sm:text-right pt-0.5">
+              🎬 {weather?.shootAdvice || cinemaLighting.advice}
             </div>
           </div>
+
         </div>
       ) : (
         /* VERTICAL TALL CAPSULE LAYOUT */
@@ -957,7 +1161,7 @@ export default function LoginWeatherClockWidget({
               <div className="flex flex-col items-center justify-center py-3">
                 <div className="relative p-2 rounded-full bg-black/40 border border-gold-500/20 shadow-[0_10px_30px_rgba(0,0,0,0.9)]">
                   <LuxuryAnalogClock 
-                    time={time} 
+                    time={displayTime} 
                     size={280} 
                     isSynced={isSynced} 
                     isSyncing={isSyncing} 
@@ -980,13 +1184,13 @@ export default function LoginWeatherClockWidget({
                   <span className="px-2 py-0.5 rounded bg-gold-500/20 border border-gold-400/40 text-[11px] font-extrabold text-gold-300">
                     {ampm}
                   </span>
-                  <span className="text-xs text-zinc-400 ml-1">
-                    ({time.toISOString().substring(11, 19)} UTC)
+                  <span className="text-xs text-gold-300/90 font-bold ml-1">
+                    ({activeTimezone.code} · {activeTimezone.offset})
                   </span>
                 </div>
 
                 <div className="text-xs font-mono text-zinc-300 mt-1">
-                  {formattedDate} • {time.toLocaleDateString('en-US', { weekday: 'long' })}
+                  {formattedDate} • {displayTime.toLocaleDateString('en-US', { weekday: 'long' })}
                 </div>
 
                 {/* Deadline Alarms Quick Access Pill inside modal */}
@@ -1016,6 +1220,73 @@ export default function LoginWeatherClockWidget({
                       Dismiss Glow
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* GLOBAL REMOTE EDITORS & CLIENT SYNC MATRIX */}
+              <div className="my-4 p-3.5 rounded-2xl bg-black/60 border border-gold-500/25 shadow-inner">
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-gold-300">
+                    <Globe className="w-3.5 h-3.5 text-gold-400" />
+                    <span>Global Remote Editors & Client Sync Radar</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-400">
+                    Click card to calibrate dial
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {SUPPORTED_TIMEZONES.map((tz) => {
+                    const zDate = getZonedDate(time, tz.timeZone);
+                    const isSelected = tz.code === activeTimezone.code;
+                    const hoursZ = zDate.getHours();
+                    const isNight = hoursZ < 7 || hoursZ >= 20;
+
+                    return (
+                      <button
+                        key={tz.code}
+                        type="button"
+                        onClick={() => handleSelectTimezone(tz.code)}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          isSelected
+                            ? 'bg-gold-500/20 border-gold-400/80 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                            : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-base">{tz.flag}</span>
+                            <span className="text-xs font-mono font-bold text-white">
+                              {tz.code}
+                            </span>
+                            {isSelected && (
+                              <span className="text-[9px] font-mono font-extrabold text-gold-400">
+                                ACTIVE
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                            isNight ? 'bg-indigo-500/20 text-indigo-300' : 'bg-amber-500/20 text-amber-300'
+                          }`}>
+                            {isNight ? '🌙 Night' : '☀️ Day'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline justify-between mt-2 font-mono">
+                          <span className="text-sm font-bold text-gold-200">
+                            {zDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+                          </span>
+                          <span className="text-[9px] text-zinc-400">
+                            {tz.offset}
+                          </span>
+                        </div>
+
+                        <div className="text-[9px] text-zinc-400 font-mono mt-0.5 truncate">
+                          {tz.name} · {tz.region}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1058,7 +1329,7 @@ export default function LoginWeatherClockWidget({
                   <span>{isSyncing ? 'Calibrating...' : 'Force Atomic Sync'}</span>
                 </button>
 
-                <div className="w-full sm:w-1/2 flex items-center p-1 rounded-xl bg-black/60 border border-white/10">
+                <div className="w-full sm:w-1/2 flex items-center p-1 rounded-xl bg-black/60 border border-white/10 gap-1">
                   <button
                     type="button"
                     onClick={() => handleSetClockVisualMode('analog')}
@@ -1082,6 +1353,18 @@ export default function LoginWeatherClockWidget({
                   >
                     <Clock className="w-3 h-3" />
                     <span>Digital</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetClockVisualMode('dual')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center justify-center space-x-1 cursor-pointer ${
+                      clockVisualMode === 'dual'
+                        ? 'bg-gold-500/30 text-gold-200 border border-gold-400/40'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Watch className="w-3 h-3" />
+                    <span>Dual</span>
                   </button>
                 </div>
               </div>

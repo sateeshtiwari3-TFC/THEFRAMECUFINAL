@@ -56,6 +56,7 @@ import FinancialOverviewView from './components/FinancialOverviewView';
 import PaymentsLedgerView from './components/PaymentsLedgerView';
 import AuditLogView from './components/AuditLogView';
 import RecycleBinView from './components/RecycleBinView';
+import ClientPreviewView from './components/ClientPreviewView';
 import { useDeadlineRunner } from './hooks/useDeadlineRunner';
 import { useWeeklyBackup } from './hooks/useWeeklyBackup';
 import WeeklyBackupPromptModal from './components/WeeklyBackupPromptModal';
@@ -100,8 +101,42 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [subActionTrigger, setSubActionTrigger] = useState<string>('');
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState<boolean>(false);
-  const [geminiInitialMode, setGeminiInitialMode] = useState<"chat" | "soundtrack" | "captions">("soundtrack");
+  const [geminiInitialMode, setGeminiInitialMode] = useState<"chat" | "video" | "music" | "image" | "transcribe" | "soundtrack" | "captions">("chat");
   const [geminiPreselectedProjectId, setGeminiPreselectedProjectId] = useState<string>("");
+
+  // Client Preview Portal State (allows clients to access via Project ID or URL param)
+  const [clientPreviewProjectId, setClientPreviewProjectId] = useState<string | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const p = params.get('preview') || params.get('clientProjectId') || params.get('project');
+      if (p) return p;
+      return sessionStorage.getItem('tfc_client_preview_id');
+    } catch {
+      return null;
+    }
+  });
+
+  const handleOpenClientPreview = (projId: string) => {
+    try {
+      sessionStorage.setItem('tfc_client_preview_id', projId);
+      const url = new URL(window.location.href);
+      url.searchParams.set('preview', projId);
+      window.history.replaceState({}, '', url.pathname + url.search);
+    } catch {}
+    setClientPreviewProjectId(projId);
+  };
+
+  const handleExitClientPreview = () => {
+    try {
+      sessionStorage.removeItem('tfc_client_preview_id');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('preview');
+      url.searchParams.delete('clientProjectId');
+      url.searchParams.delete('project');
+      window.history.replaceState({}, '', url.pathname);
+    } catch {}
+    setClientPreviewProjectId(null);
+  };
 
   const lastCheckedSignatureRef = React.useRef<string>('');
 
@@ -1673,6 +1708,7 @@ export default function App() {
             onRedirectToRegistry={() => setActiveTab('registry')}
             initialTriggerAction={subActionTrigger}
             onOpenCreativeTool={handleOpenGeminiCreativeTool}
+            onOpenClientPreview={handleOpenClientPreview}
           />
         );
       }
@@ -1699,6 +1735,7 @@ export default function App() {
             onRedirectToRegistry={() => setActiveTab('registry')}
             initialTriggerAction={subActionTrigger}
             onOpenCreativeTool={handleOpenGeminiCreativeTool}
+            onOpenClientPreview={handleOpenClientPreview}
           />
         );
       case 'registry':
@@ -1781,6 +1818,7 @@ export default function App() {
               onRedirectToRegistry={() => setActiveTab('registry')}
               initialTriggerAction={subActionTrigger}
               onOpenCreativeTool={handleOpenGeminiCreativeTool}
+              onOpenClientPreview={handleOpenClientPreview}
             />
           );
         }
@@ -1977,6 +2015,34 @@ export default function App() {
     return <AuthLoadingPlaceholder theme={theme} />;
   }
 
+  // 1.5. If Client Preview is active, render ClientPreviewView
+  if (clientPreviewProjectId) {
+    const matchedProject = projects.find(p => 
+      p.id?.toLowerCase() === clientPreviewProjectId.toLowerCase() || 
+      (p.projectName && p.projectName.toLowerCase() === clientPreviewProjectId.toLowerCase())
+    );
+
+    return (
+      <div className="flex flex-col min-h-screen bg-charcoal-950 text-gray-200 relative">
+        <OfflineStatusBanner 
+          isOnline={isOnline} 
+          onCheckConnection={() => setIsOnline(navigator.onLine)} 
+        />
+        <ClientPreviewView
+          projectId={clientPreviewProjectId}
+          project={matchedProject}
+          projects={projects}
+          studios={studios}
+          editors={editors}
+          revisions={revisions}
+          onAddRevision={handleAddRevision}
+          onExit={handleExitClientPreview}
+          isStaffViewing={!!currentUser}
+        />
+      </div>
+    );
+  }
+
   // 2. If not logged in, render cinematic brand portal with persistent offline alert if disconnected
   if (!currentUser) {
     return (
@@ -1985,7 +2051,13 @@ export default function App() {
           isOnline={isOnline} 
           onCheckConnection={() => setIsOnline(navigator.onLine)} 
         />
-        <LoginView onLogin={handleLogin} studios={studios} editors={editors} />
+        <LoginView 
+          onLogin={handleLogin} 
+          onClientPreviewLogin={handleOpenClientPreview}
+          studios={studios} 
+          editors={editors} 
+          projects={projects}
+        />
       </div>
     );
   }

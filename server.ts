@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, GenerateVideosOperation } from "@google/genai";
 
 // Load env variables
 import dotenv from "dotenv";
@@ -1043,6 +1043,711 @@ As the Financial Operations Director at 'The Frame Cut Studio', evaluate the fin
       console.error("Gemini Estimate Profit Error:", error);
       res.status(500).json({
         error: error.message || "Failed to estimate project profit."
+      });
+    }
+  });
+
+  // ==========================================
+  // Gemini Project Pricing Estimator (Historical Data Analysis)
+  // ==========================================
+  function calculateStatisticalPricingFallback(
+    targetProject: any,
+    historicalProjects: any[] = [],
+    editorInfo: any,
+    studioInfo: any,
+    adjustments: any = {}
+  ) {
+    const targetEventType = String(targetProject?.eventType || "Wedding").toLowerCase();
+    const validProjects = (historicalProjects || []).filter(
+      (p: any) => p && typeof p === "object" && Number(p.projectAmount) > 0
+    );
+
+    const matchingHistorical = validProjects.filter((p: any) => {
+      const pEvent = String(p.eventType || "").toLowerCase();
+      return pEvent.includes(targetEventType) || targetEventType.includes(pEvent);
+    });
+
+    const dataset = matchingHistorical.length >= 2 ? matchingHistorical : validProjects;
+
+    const baseAmount = dataset.length > 0 
+      ? Math.round(dataset.reduce((sum: number, p: any) => sum + Number(p.projectAmount || 0), 0) / dataset.length)
+      : Number(targetProject?.projectAmount) || 48000;
+
+    const baseEditorFee = dataset.length > 0
+      ? Math.round(dataset.reduce((sum: number, p: any) => sum + Number(p.editorPayment || 0), 0) / dataset.length)
+      : Math.round(baseAmount * 0.28);
+
+    // Apply duration multiplier
+    const durationStr = String(targetProject?.deliverables || adjustments?.durationTier || "").toLowerCase();
+    let durationMultiplier = 1.0;
+    if (durationStr.includes("teaser") || durationStr.includes("reels")) durationMultiplier = 0.6;
+    else if (durationStr.includes("highlight")) durationMultiplier = 0.88;
+    else if (durationStr.includes("documentary") || durationStr.includes("full") || durationStr.includes("royal") || durationStr.includes("60")) durationMultiplier = 1.35;
+
+    // Apply editor specialization multiplier
+    const editorSpec = String(adjustments?.editorSpecialization || editorInfo?.notes || editorInfo?.specialties?.join(" ") || "").toLowerCase();
+    let editorMultiplier = 1.0;
+    if (editorSpec.includes("senior") || editorSpec.includes("lead") || editorSpec.includes("colorist") || editorSpec.includes("director") || editorSpec.includes("master")) {
+      editorMultiplier = 1.18;
+    } else if (editorSpec.includes("associate") || editorSpec.includes("junior")) {
+      editorMultiplier = 0.92;
+    }
+
+    // Apply rush turnaround multiplier
+    const turnaround = String(adjustments?.turnaround || "").toLowerCase();
+    let rushMultiplier = 1.0;
+    if (turnaround.includes("express") || turnaround.includes("rush") || turnaround.includes("48")) {
+      rushMultiplier = 1.25;
+    } else if (turnaround.includes("priority") || turnaround.includes("7")) {
+      rushMultiplier = 1.12;
+    }
+
+    const calculatedPrice = Math.round((baseAmount * durationMultiplier * editorMultiplier * rushMultiplier) / 500) * 500;
+    const calculatedEditorFee = Math.round((Math.max(baseEditorFee * durationMultiplier * editorMultiplier, calculatedPrice * 0.28)) / 500) * 500;
+    const projectedProfit = Math.max(0, calculatedPrice - calculatedEditorFee);
+    const projectedMarginPct = calculatedPrice > 0 ? Math.round((projectedProfit / calculatedPrice) * 100) : 70;
+
+    const precedents = dataset.slice(0, 3).map((p: any) => ({
+      projectName: p.projectName || p.coupleName || "Past Studio Project",
+      eventType: p.eventType || "Wedding",
+      amount: Number(p.projectAmount) || baseAmount,
+      relevanceReason: `Historical match for ${p.eventType || "similar"} event scope with benchmark pricing of ₹${(Number(p.projectAmount) || baseAmount).toLocaleString("en-IN")}.`
+    }));
+
+    return {
+      recommendedPrice: calculatedPrice,
+      suggestedPriceMin: Math.round((calculatedPrice * 0.85) / 500) * 500,
+      suggestedPriceMax: Math.round((calculatedPrice * 1.25) / 500) * 500,
+      suggestedEditorFee: calculatedEditorFee,
+      projectedProfit,
+      projectedMarginPct,
+      confidenceLevel: matchingHistorical.length >= 3 ? "High" : matchingHistorical.length >= 1 ? "Medium" : "Moderate",
+      marketReasoning: `Historical analysis of ${dataset.length} studio projects shows average contract rates of ₹${baseAmount.toLocaleString("en-IN")}. Pricing is calibrated for ${targetProject?.eventType || "Wedding"} deliverables, editor specialization level (${editorInfo?.name || "Assigned Lead"}), and current market demand.`,
+      historicalPrecedents: precedents.length > 0 ? precedents : [
+        {
+          projectName: "Benchmark Wedding Film",
+          eventType: targetProject?.eventType || "Wedding",
+          amount: baseAmount,
+          relevanceReason: "Baseline studio commercial rate for cinematic wedding post-production."
+        }
+      ],
+      packages: [
+        {
+          tierName: "Essential Narrative",
+          price: Math.round((calculatedPrice * 0.8) / 500) * 500,
+          editorFee: Math.round((calculatedEditorFee * 0.85) / 500) * 500,
+          scopeSummary: "Highlight film (3-5 min) + standard color grade + 1 revision cycle"
+        },
+        {
+          tierName: "Signature Cinematic (Recommended)",
+          price: calculatedPrice,
+          editorFee: calculatedEditorFee,
+          scopeSummary: "Cinematic Highlight (4-6 min) + Full Traditional Arc (20 min) + 2 Reels + 2 Revisions"
+        },
+        {
+          tierName: "Luxury Royal Heritage",
+          price: Math.round((calculatedPrice * 1.35) / 500) * 500,
+          editorFee: Math.round((calculatedEditorFee * 1.3) / 500) * 500,
+          scopeSummary: "Full Multi-Day Feature (45-60 min) + 4K HDR Grade + 5 Reels + Teaser + Unlimited Revisions"
+        }
+      ],
+      upsells: [
+        {
+          title: "Next-Day Teaser Reel (60s)",
+          suggestedAddonPrice: 6500,
+          benefit: "High-urgency social reel delivered within 24 hours of receiving ceremony footage"
+        },
+        {
+          title: "Custom LUT & Color Match Pass",
+          suggestedAddonPrice: 4500,
+          benefit: "Bespoke cinematic color palette matched to bride & groom couture tones"
+        },
+        {
+          title: "Cloud Master RAW Archive (1 Year)",
+          suggestedAddonPrice: 3500,
+          benefit: "High-speed encrypted cloud storage for RAW project files and multi-cam timelines"
+        }
+      ]
+    };
+  }
+
+  app.post("/api/gemini/estimate-pricing", async (req, res) => {
+    try {
+      const {
+        targetProject,
+        historicalProjects = [],
+        editorInfo,
+        studioInfo,
+        adjustments = {}
+      } = req.body;
+
+      if (!targetProject) {
+        return res.status(400).json({ error: "targetProject is required." });
+      }
+
+      let client: GoogleGenAI | null = null;
+      try {
+        client = getAiClient();
+      } catch (clientErr) {
+        console.warn("Gemini client not initialized, using statistical regression fallback:", clientErr);
+        const fallbackData = calculateStatisticalPricingFallback(
+          targetProject,
+          historicalProjects,
+          editorInfo,
+          studioInfo,
+          adjustments
+        );
+        return res.json({
+          success: true,
+          data: fallbackData,
+          source: "statistical_regression"
+        });
+      }
+
+      const prompt = `Wedding Cinematography Project Pricing Analysis & AI Estimation:
+Target Project:
+- Name / Couple: ${targetProject.coupleName || targetProject.projectName || "Wedding Project"}
+- Event Type: ${targetProject.eventType || "Full Wedding Film Arc"}
+- Duration / Scope / Deliverables: ${targetProject.deliverables || adjustments.durationTier || targetProject.dataSize || "Highlight (4-6 min) + Full Traditional Film"}
+- Assigned Editor: ${editorInfo?.name || targetProject.assignedEditorName || "Lead Cinematic Editor"}
+- Editor Specialization / Rating: ${adjustments.editorSpecialization || editorInfo?.notes || editorInfo?.rating || "Senior Wedding Colorist & Storyteller"}
+- Studio Partner: ${studioInfo?.name || targetProject.studioName || "Partner Studio"}
+- Current Set Price (if any): ₹${targetProject.projectAmount || 0}
+- Custom Adjustments: ${JSON.stringify(adjustments || {})}
+
+Historical Precedent Projects in Studio Database:
+${JSON.stringify((historicalProjects || []).slice(0, 25), null, 2)}
+
+Task:
+As the Senior Commercial Pricing Director at 'The Frame Cut Studio', evaluate historical projects with matching event types, editing durations, and editor skill levels.
+Generate a structured, market-competitive pricing recommendation tailored for this specific project.
+Provide:
+1. Recommended Client Price (INR), Suggested Range (Min and Max).
+2. Recommended Editor Compensation (INR).
+3. Estimated Net Profit (INR) and Gross Profit Margin (%).
+4. Confidence Level (High, Medium, Low) based on historical dataset match.
+5. Analytical Reasoning grounded in the historical precedents.
+6. 2-3 Specific Historical Project Precedents from the provided data that justify this pricing.
+7. Three Package Tiers (Essential / Budget, Recommended Standard, Luxury Signature).
+8. 2-3 High-Margin Upsell Add-ons.`;
+
+      const estimateConfig: any = {
+        systemInstruction: "You are the Executive Pricing Director and CFO for The Frame Cut Studio, a premier wedding cinema post-production ERP. Recommend precise, profitable, and market-tested prices in Indian Rupees (₹) by analyzing historical project deliverables, editor specializations, and production scopes.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            recommendedPrice: { type: Type.NUMBER, description: "Optimal client price in INR" },
+            suggestedPriceMin: { type: Type.NUMBER, description: "Lower bound market price in INR" },
+            suggestedPriceMax: { type: Type.NUMBER, description: "Upper bound premium price in INR" },
+            suggestedEditorFee: { type: Type.NUMBER, description: "Recommended editor compensation in INR" },
+            projectedProfit: { type: Type.NUMBER, description: "Estimated studio net profit in INR" },
+            projectedMarginPct: { type: Type.NUMBER, description: "Profit margin percentage (e.g. 65)" },
+            confidenceLevel: { type: Type.STRING, description: "High, Medium, or Low" },
+            marketReasoning: { type: Type.STRING, description: "2-3 crisp sentences explaining how historical data determined this price" },
+            historicalPrecedents: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  projectName: { type: Type.STRING },
+                  eventType: { type: Type.STRING },
+                  amount: { type: Type.NUMBER },
+                  relevanceReason: { type: Type.STRING }
+                },
+                required: ["projectName", "eventType", "amount", "relevanceReason"]
+              }
+            },
+            packages: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  tierName: { type: Type.STRING },
+                  price: { type: Type.NUMBER },
+                  editorFee: { type: Type.NUMBER },
+                  scopeSummary: { type: Type.STRING }
+                },
+                required: ["tierName", "price", "editorFee", "scopeSummary"]
+              }
+            },
+            upsells: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  suggestedAddonPrice: { type: Type.NUMBER },
+                  benefit: { type: Type.STRING }
+                },
+                required: ["title", "suggestedAddonPrice", "benefit"]
+              }
+            }
+          },
+          required: [
+            "recommendedPrice",
+            "suggestedPriceMin",
+            "suggestedPriceMax",
+            "suggestedEditorFee",
+            "projectedProfit",
+            "projectedMarginPct",
+            "confidenceLevel",
+            "marketReasoning",
+            "packages"
+          ]
+        }
+      };
+
+      const { response } = await callGeminiWithFallback(client, {
+        primaryModel: "gemini-flash-latest",
+        fallbackModels: ["gemini-3.8-flash", "gemini-3.1-flash-lite"],
+        contents: prompt,
+        config: estimateConfig
+      });
+
+      const parsedData = JSON.parse(response.text || "{}");
+      res.json({
+        success: true,
+        data: parsedData,
+        source: "gemini"
+      });
+    } catch (error: any) {
+      console.warn("Gemini Pricing Estimate Failed, falling back to statistical regression:", error?.message);
+      const fallbackData = calculateStatisticalPricingFallback(
+        req.body?.targetProject,
+        req.body?.historicalProjects,
+        req.body?.editorInfo,
+        req.body?.studioInfo,
+        req.body?.adjustments
+      );
+      res.json({
+        success: true,
+        data: fallbackData,
+        source: "statistical_regression",
+        warning: error.message
+      });
+    }
+  });
+
+  // ==========================================
+  // Gemini Multi-Turn Chat with Grounding
+  // ==========================================
+  app.post("/api/gemini/chat", async (req, res) => {
+    try {
+      const {
+        messages = [],
+        systemInstruction,
+        model = "gemini-3.5-flash",
+        enableSearch = false,
+        enableMaps = false,
+        location,
+      } = req.body;
+
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: "Messages array is required." });
+      }
+
+      const client = getAiClient();
+
+      const tools: any[] = [];
+      let toolConfig: any = undefined;
+
+      if (enableMaps) {
+        tools.push({ googleMaps: {} });
+        if (location && location.latitude && location.longitude) {
+          toolConfig = {
+            retrievalConfig: {
+              latLng: {
+                latitude: Number(location.latitude),
+                longitude: Number(location.longitude),
+              },
+            },
+          };
+        }
+      } else if (enableSearch) {
+        tools.push({ googleSearch: {} });
+      }
+
+      const validModel = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.1-flash-lite"].includes(model)
+        ? model
+        : "gemini-3.5-flash";
+
+      const config: any = {};
+      if (systemInstruction) {
+        config.systemInstruction = systemInstruction;
+      }
+      if (tools.length > 0) {
+        config.tools = tools;
+      }
+      if (toolConfig) {
+        config.toolConfig = toolConfig;
+      }
+
+      const formattedContents = messages.map((m: any) => ({
+        role: m.role === "assistant" || m.role === "model" ? "model" : "user",
+        parts: Array.isArray(m.parts)
+          ? m.parts
+          : [{ text: m.text || m.content || "" }],
+      }));
+
+      const response = await client.models.generateContent({
+        model: validModel,
+        contents: formattedContents,
+        config,
+      });
+
+      const responseText = response.text || "";
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+
+      res.json({
+        success: true,
+        text: responseText,
+        model: validModel,
+        groundingChunks,
+      });
+    } catch (error: any) {
+      console.error("Gemini Chat API Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to generate chat response.",
+      });
+    }
+  });
+
+  // ==========================================
+  // Music Generation with Lyria (lyria-3-clip-preview / lyria-3-pro-preview)
+  // ==========================================
+  app.post("/api/gemini/music/generate", async (req, res) => {
+    try {
+      const {
+        prompt,
+        model = "lyria-3-clip-preview",
+        imageBase64,
+        mimeType,
+      } = req.body;
+
+      if (!prompt) {
+        return res.status(400).json({ error: "Music prompt is required." });
+      }
+
+      const client = getAiClient();
+      const validModel = model === "lyria-3-pro-preview" ? "lyria-3-pro-preview" : "lyria-3-clip-preview";
+
+      let contents: any;
+      if (imageBase64) {
+        const cleanBase64 = imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
+        contents = {
+          parts: [
+            { text: prompt },
+            { inlineData: { data: cleanBase64, mimeType: mimeType || "image/jpeg" } },
+          ],
+        };
+      } else {
+        contents = prompt;
+      }
+
+      let audioBase64 = "";
+      let lyrics = "";
+      let audioMimeType = "audio/wav";
+
+      const responseStream = await client.models.generateContentStream({
+        model: validModel,
+        contents,
+      });
+
+      for await (const chunk of responseStream) {
+        const parts = chunk.candidates?.[0]?.content?.parts;
+        if (!parts) continue;
+        for (const part of parts) {
+          if (part.inlineData?.data) {
+            if (!audioBase64 && part.inlineData.mimeType) {
+              audioMimeType = part.inlineData.mimeType;
+            }
+            audioBase64 += part.inlineData.data;
+          }
+          if (part.text && !lyrics) {
+            lyrics = part.text;
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        model: validModel,
+        audioBase64,
+        mimeType: audioMimeType,
+        lyrics: lyrics || `Cinematic wedding track generated for: "${prompt}"`,
+      });
+    } catch (error: any) {
+      console.error("Music Generation Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to generate music with Lyria.",
+      });
+    }
+  });
+
+  // ==========================================
+  // Veo Video Generation (veo-3.1-fast-generate-preview)
+  // Text-to-Video & Image-to-Video (Animate Images)
+  // ==========================================
+  app.post("/api/gemini/video/generate", async (req, res) => {
+    try {
+      const {
+        prompt,
+        imageBase64,
+        mimeType = "image/jpeg",
+        aspectRatio = "16:9",
+        resolution = "720p",
+      } = req.body;
+
+      if (!prompt && !imageBase64) {
+        return res.status(400).json({ error: "Please provide either a prompt or an image." });
+      }
+
+      const client = getAiClient();
+      const validAspectRatio = aspectRatio === "9:16" ? "9:16" : "16:9";
+      const validResolution = resolution === "1080p" ? "1080p" : "720p";
+
+      const generateParams: any = {
+        model: "veo-3.1-fast-generate-preview",
+        config: {
+          numberOfVideos: 1,
+          aspectRatio: validAspectRatio,
+          resolution: validResolution,
+        },
+      };
+
+      if (prompt) {
+        generateParams.prompt = prompt;
+      }
+
+      if (imageBase64) {
+        const cleanBase64 = imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
+        generateParams.image = {
+          imageBytes: cleanBase64,
+          mimeType: mimeType || "image/jpeg",
+        };
+      }
+
+      const operation = await client.models.generateVideos(generateParams);
+
+      res.json({
+        success: true,
+        operationName: operation.name,
+      });
+    } catch (error: any) {
+      console.error("Veo Video Generation Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to start video generation with Veo.",
+      });
+    }
+  });
+
+  app.post("/api/gemini/video/status", async (req, res) => {
+    try {
+      const { operationName } = req.body;
+      if (!operationName) {
+        return res.status(400).json({ error: "operationName is required." });
+      }
+
+      const client = getAiClient();
+      const op = new GenerateVideosOperation();
+      op.name = operationName;
+
+      const updated = await client.operations.getVideosOperation({ operation: op });
+
+      res.json({
+        success: true,
+        done: updated.done || false,
+        error: updated.error || null,
+      });
+    } catch (error: any) {
+      console.error("Veo Video Status Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to query video status.",
+      });
+    }
+  });
+
+  app.post("/api/gemini/video/download", async (req, res) => {
+    try {
+      const { operationName } = req.body;
+      if (!operationName) {
+        return res.status(400).json({ error: "operationName is required." });
+      }
+
+      const client = getAiClient();
+      const apiKey = process.env.GEMINI_API_KEY;
+      const op = new GenerateVideosOperation();
+      op.name = operationName;
+
+      const updated = await client.operations.getVideosOperation({ operation: op });
+      const uri = updated.response?.generatedVideos?.[0]?.video?.uri;
+
+      if (!uri) {
+        return res.status(404).json({ error: "Video URI not found or video not yet ready." });
+      }
+
+      const videoRes = await fetch(uri, {
+        headers: { "x-goog-api-key": apiKey || "" },
+      });
+
+      if (!videoRes.ok) {
+        throw new Error(`Failed to fetch video from storage URI (status ${videoRes.status})`);
+      }
+
+      const arrayBuffer = await videoRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Length", buffer.length);
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("Veo Video Download Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to download video.",
+      });
+    }
+  });
+
+  // ==========================================
+  // Audio Transcription (gemini-3.5-transcribe)
+  // ==========================================
+  app.post("/api/gemini/transcribe", async (req, res) => {
+    try {
+      const { audioBase64, mimeType = "audio/webm", prompt } = req.body;
+
+      if (!audioBase64) {
+        return res.status(400).json({ error: "audioBase64 is required." });
+      }
+
+      const client = getAiClient();
+      const cleanBase64 = audioBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
+
+      const audioPart = {
+        inlineData: {
+          mimeType: mimeType || "audio/webm",
+          data: cleanBase64,
+        },
+      };
+
+      const response = await client.models.generateContent({
+        model: "gemini-3.5-transcribe",
+        contents: {
+          parts: [
+            audioPart,
+            { text: prompt || "Transcribe this audio recording accurately with speaker identification, timestamps, and emotional nuances where applicable." },
+          ],
+        },
+      });
+
+      res.json({
+        success: true,
+        transcription: response.text || "",
+      });
+    } catch (error: any) {
+      console.error("Audio Transcription Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to transcribe audio.",
+      });
+    }
+  });
+
+  // ==========================================
+  // Create & Edit Images (gemini-3.1-flash-image-preview)
+  // ==========================================
+  app.post("/api/gemini/image/generate", async (req, res) => {
+    try {
+      const {
+        prompt,
+        base64ImageData,
+        mimeType = "image/jpeg",
+        aspectRatio = "1:1",
+      } = req.body;
+
+      if (!prompt && !base64ImageData) {
+        return res.status(400).json({ error: "Prompt or base image is required." });
+      }
+
+      const client = getAiClient();
+      const validAspectRatio = ["1:1", "3:4", "4:3", "9:16", "16:9"].includes(aspectRatio)
+        ? aspectRatio
+        : "1:1";
+
+      const parts: any[] = [];
+      if (base64ImageData) {
+        const cleanBase64 = base64ImageData.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
+        parts.push({
+          inlineData: {
+            data: cleanBase64,
+            mimeType: mimeType || "image/jpeg",
+          },
+        });
+      }
+      parts.push({
+        text: prompt || "High quality cinematic wedding visual photograph",
+      });
+
+      const modelsToTry = [
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-lite-image",
+      ];
+
+      let generatedImageUrl: string | null = null;
+      let textResponse = "";
+      let modelUsed = "";
+
+      for (const m of modelsToTry) {
+        try {
+          const config: any = {
+            imageConfig: {
+              aspectRatio: validAspectRatio,
+            },
+          };
+          const response = await client.models.generateContent({
+            model: m,
+            contents: { parts },
+            config,
+          });
+
+          const candidates = response.candidates || [];
+          for (const cand of candidates) {
+            for (const part of cand.content?.parts || []) {
+              if (part.inlineData?.data) {
+                const imgMime = part.inlineData.mimeType || "image/png";
+                generatedImageUrl = `data:${imgMime};base64,${part.inlineData.data}`;
+              } else if (part.text) {
+                textResponse += (textResponse ? "\n" : "") + part.text;
+              }
+            }
+          }
+
+          if (generatedImageUrl) {
+            modelUsed = m;
+            break;
+          }
+        } catch (mErr: any) {
+          console.warn(`Model ${m} image attempt error:`, mErr.message);
+        }
+      }
+
+      if (!generatedImageUrl) {
+        return res.status(500).json({
+          error: "Could not generate or edit image from the provided prompt. Please check your prompt or API key.",
+          text: textResponse,
+        });
+      }
+
+      res.json({
+        success: true,
+        imageUrl: generatedImageUrl,
+        text: textResponse,
+        model: modelUsed,
+      });
+    } catch (error: any) {
+      console.error("Image Generation Error:", error);
+      res.status(500).json({
+        error: error.message || "Failed to create or edit image.",
       });
     }
   });

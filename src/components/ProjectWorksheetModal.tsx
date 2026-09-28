@@ -30,6 +30,7 @@ interface ProjectWorksheetModalProps {
   editors?: Editor[];
   isOpen: boolean;
   onClose: () => void;
+  onOpenClientPreview?: (projectId: string) => void;
 }
 
 export const ProjectWorksheetModal: React.FC<ProjectWorksheetModalProps> = ({
@@ -38,7 +39,8 @@ export const ProjectWorksheetModal: React.FC<ProjectWorksheetModalProps> = ({
   studios = [],
   editors = [],
   isOpen,
-  onClose
+  onClose,
+  onOpenClientPreview
 }) => {
   const worksheetRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -161,6 +163,20 @@ ${projectRevisions.map(r => `• REV-#${r.revisionNumber} (${r.date}): ${r.notes
           </div>
 
           <div className="flex items-center flex-wrap gap-2">
+            {onOpenClientPreview && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenClientPreview(project.id);
+                }}
+                className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs transition-all cursor-pointer flex items-center space-x-1.5"
+                title="View read-only client preview portal"
+              >
+                <Film className="w-4 h-4 text-emerald-400" />
+                <span>Client Preview</span>
+              </button>
+            )}
+
             <button
               onClick={handlePrint}
               className="px-3.5 py-2 rounded-xl bg-gold-500 text-emerald-950 font-bold text-xs hover:bg-gold-400 transition-all cursor-pointer flex items-center space-x-1.5 shadow-md"

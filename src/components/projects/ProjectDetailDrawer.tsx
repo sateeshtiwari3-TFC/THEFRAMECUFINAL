@@ -33,7 +33,8 @@ import {
   AlertTriangle,
   TrendingUp,
   Check,
-  Camera
+  Camera,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Project, Studio, Editor, Revision, UserRole, ProjectStatus, CalendarEvent, QcCheckItem } from '../../types';
@@ -43,6 +44,7 @@ import { ProjectReferencePhotosGallery } from './ProjectReferencePhotosGallery';
 import ProjectUrgencyBadge from './ProjectUrgencyBadge';
 import ProjectStatusBadge, { WORKFLOW_STAGES } from '../ProjectStatusBadge';
 import NewBadge from '../common/NewBadge';
+import { ProjectPricingEstimateTool } from './ProjectPricingEstimateTool';
 
 interface ProjectDetailDrawerProps {
   project: Project | null;
@@ -52,6 +54,7 @@ interface ProjectDetailDrawerProps {
   editors: Editor[];
   revisions: Revision[];
   calendarEvents?: CalendarEvent[];
+  allProjects?: Project[];
   userRole: UserRole;
   onUpdateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   onDeleteProject: (id: string) => Promise<void>;
@@ -79,6 +82,7 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
   editors,
   revisions,
   calendarEvents = [],
+  allProjects = [],
   userRole,
   onUpdateProject,
   onDeleteProject,
@@ -95,7 +99,7 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
   onResetProject,
   onOpenQualityControl
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'photos' | 'financials' | 'qc' | 'storage' | 'revisions' | 'notes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'estimate' | 'photos' | 'financials' | 'qc' | 'storage' | 'revisions' | 'notes'>('overview');
   const [newRevisionNote, setNewRevisionNote] = useState('');
   const [isSubmittingRev, setIsSubmittingRev] = useState(false);
 
@@ -244,6 +248,12 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
             {[
               { id: 'overview', label: 'Overview & Specs', icon: Layers },
               { 
+                id: 'estimate', 
+                label: 'AI Estimate Tool', 
+                icon: Sparkles,
+                badge: 'Gemini AI'
+              },
+              { 
                 id: 'photos', 
                 label: `Reference Photos (${(project.referencePhotos || []).length})`, 
                 icon: Camera,
@@ -272,8 +282,13 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                       : 'border-transparent text-gray-400 hover:text-gray-200'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className={`w-3.5 h-3.5 ${tab.id === 'estimate' ? 'text-gold-400' : ''}`} />
                   <span>{tab.label}</span>
+                  {tab.id === 'estimate' && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold uppercase bg-gold-500/20 text-gold-300 border border-gold-500/40">
+                      Gemini
+                    </span>
+                  )}
                   {tab.id === 'photos' && (
                     <NewBadge releaseDate="2026-09-12" daysThreshold={10} size="xs" />
                   )}
@@ -356,6 +371,15 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                     >
                       <Share2 className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                       <span>Reels & Captions</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('estimate')}
+                      className="py-2.5 px-3 rounded-xl bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/40 text-gold-300 hover:text-gold-200 text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-sm group sm:col-span-2"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-gold-400 group-hover:scale-110 transition-transform" />
+                      <span>Launch Gemini Project Pricing & Profit Estimator</span>
                     </button>
                   </div>
                 </div>
@@ -459,6 +483,26 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                   />
                 </div>
 
+              </div>
+            )}
+
+            {/* 1.5. GEMINI AI ESTIMATE TOOL TAB */}
+            {activeTab === 'estimate' && (
+              <div className="space-y-4">
+                <ProjectPricingEstimateTool
+                  project={project}
+                  allProjects={allProjects || []}
+                  studios={studios}
+                  editors={editors}
+                  onApplyPricing={async (newPrice, newEditorFee) => {
+                    await onUpdateProject(project.id, {
+                      projectAmount: newPrice,
+                      editorPayment: newEditorFee,
+                      remainingBalance: Math.max(0, newPrice - (project.advancePayment || 0))
+                    });
+                  }}
+                  isInsideDrawer={true}
+                />
               </div>
             )}
 
@@ -602,14 +646,24 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                       <Coins className="w-4 h-4 text-emerald-400" />
                       <span>Project Financial Ledger</span>
                     </h3>
-                    <button
-                      type="button"
-                      onClick={() => onOpenQuickPrintInvoice(project)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Print Invoice</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('estimate')}
+                        className="px-3 py-1.5 rounded-xl bg-gold-500/20 hover:bg-gold-500/30 text-gold-300 border border-gold-500/40 text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-gold-400" />
+                        <span>AI Price Estimator</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenQuickPrintInvoice(project)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Print Invoice</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
@@ -702,6 +756,29 @@ export const ProjectDetailDrawer: React.FC<ProjectDetailDrawerProps> = ({
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* AI Historical Pricing Recommendation Banner */}
+                <div className="p-4 rounded-3xl bg-gradient-to-r from-charcoal-900 via-charcoal-950 to-luxury-green-950/40 border border-gold-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-gold-400" />
+                      <span className="text-xs font-bold text-white uppercase tracking-wider font-display">
+                        Need Commercial Pricing Calibration?
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 font-sans">
+                      Let Gemini analyze {allProjects.length} historical studio projects to suggest optimal rates based on event scope, duration, and editor specialization.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('estimate')}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-gold-500 to-gold-400 hover:from-gold-400 hover:to-gold-300 text-charcoal-950 text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shrink-0 cursor-pointer"
+                  >
+                    <span>Run Estimate Tool</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             )}

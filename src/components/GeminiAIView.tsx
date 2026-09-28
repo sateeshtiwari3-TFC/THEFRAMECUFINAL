@@ -18,12 +18,23 @@ import {
   Workflow,
   Music,
   Share2,
-  Headphones
+  Headphones,
+  Film,
+  Image as ImageIcon,
+  Mic,
+  Disc3
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Project, Studio, Editor, Expense, CalendarEvent, UserProfile } from "../types";
 import { WeddingSoundtrackSuggester } from "./creative/WeddingSoundtrackSuggester";
 import { ReelsCaptionGenerator } from "./creative/ReelsCaptionGenerator";
+import { GeminiMultiTurnChat } from "./creative/GeminiMultiTurnChat";
+import { VeoVideoStudio } from "./creative/VeoVideoStudio";
+import { LyriaMusicStudio } from "./creative/LyriaMusicStudio";
+import { ImageStudioModal } from "./creative/ImageStudioModal";
+import { AudioTranscriberStudio } from "./creative/AudioTranscriberStudio";
+
+export type GeminiTabMode = "chat" | "video" | "music" | "image" | "transcribe" | "soundtrack" | "captions";
 
 interface GeminiAIViewProps {
   projects: Project[];
@@ -32,7 +43,7 @@ interface GeminiAIViewProps {
   expenses: Expense[];
   calendarEvents: CalendarEvent[];
   currentUser: UserProfile | null;
-  initialMode?: "chat" | "soundtrack" | "captions";
+  initialMode?: GeminiTabMode;
   preselectedProjectId?: string;
 }
 
@@ -55,7 +66,7 @@ export default function GeminiAIView({
   initialMode = "soundtrack",
   preselectedProjectId
 }: GeminiAIViewProps) {
-  const [activeTab, setActiveTab] = useState<"soundtrack" | "captions" | "chat">(initialMode);
+  const [activeTab, setActiveTab] = useState<GeminiTabMode>(initialMode);
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -324,63 +335,121 @@ Unable to process your request at this time.
   return (
     <div className="space-y-6">
       {/* AI Hub Navigation Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 bg-charcoal-900/90 border border-luxury-green-800/25 rounded-2xl shadow-xl backdrop-blur-md">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setActiveTab("soundtrack")}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
-              activeTab === "soundtrack"
-                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
-                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
-            }`}
-          >
-            <Music className="w-4 h-4" />
-            <span>Wedding Soundtrack Suggester</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${
-              activeTab === "soundtrack" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-gold-500/10 text-gold-400"
-            }`}>
-              AI Audio
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("captions")}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
-              activeTab === "captions"
-                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
-                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
-            }`}
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Reels & YouTube Captions</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${
-              activeTab === "captions" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-emerald-500/10 text-emerald-400"
-            }`}>
-              Viral Hooks
-            </span>
-          </button>
-
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-2 bg-charcoal-900/90 border border-luxury-green-800/25 rounded-2xl shadow-xl backdrop-blur-md">
+        <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
           <button
             onClick={() => setActiveTab("chat")}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
               activeTab === "chat"
                 ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
                 : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
             }`}
           >
             <Bot className="w-4 h-4" />
-            <span>Studio Operations Assistant</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${
+            <span>Gemini Chat</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
               activeTab === "chat" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-blue-500/10 text-blue-400"
             }`}>
-              ERP Sync
+              Search & Maps
             </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("video")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === "video"
+                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
+                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
+            }`}
+          >
+            <Film className="w-4 h-4" />
+            <span>Veo 3 Video</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+              activeTab === "video" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-purple-500/10 text-purple-400"
+            }`}>
+              Animate Photo
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("music")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === "music"
+                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
+                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
+            }`}
+          >
+            <Music className="w-4 h-4" />
+            <span>Lyria Music</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+              activeTab === "music" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-amber-500/10 text-amber-400"
+            }`}>
+              Clips & Pro
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("image")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === "image"
+                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
+                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            <span>Image Studio</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+              activeTab === "image" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-pink-500/10 text-pink-400"
+            }`}>
+              Create & Edit
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("transcribe")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === "transcribe"
+                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
+                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
+            }`}
+          >
+            <Mic className="w-4 h-4" />
+            <span>Audio Transcriber</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+              activeTab === "transcribe" ? "bg-charcoal-950/20 text-charcoal-950 font-bold" : "bg-emerald-500/10 text-emerald-400"
+            }`}>
+              Mic & File
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("soundtrack")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === "soundtrack"
+                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
+                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
+            }`}
+          >
+            <Headphones className="w-4 h-4" />
+            <span>Soundtrack Curation</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("captions")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+              activeTab === "captions"
+                ? "bg-gradient-to-r from-gold-500 to-amber-500 text-charcoal-950 shadow-md shadow-gold-500/20"
+                : "text-gray-300 hover:text-white hover:bg-luxury-green-950/50"
+            }`}
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Reels & Captions</span>
           </button>
         </div>
 
-        <div className="flex items-center space-x-2 px-3 py-1 text-[11px] font-mono text-gray-400">
+        <div className="flex items-center space-x-2 px-3 py-1 text-[11px] font-mono text-gray-400 shrink-0">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Gemini 3.8 Flash & Pro</span>
+          <span>Gemini & Veo 3 & Lyria</span>
         </div>
       </div>
 
@@ -400,6 +469,23 @@ Unable to process your request at this time.
       )}
 
       {activeTab === "chat" && (
+        <GeminiMultiTurnChat
+          projects={projects}
+          studios={studios}
+          editors={editors}
+          userName={currentUser?.name || "Studio Admin"}
+        />
+      )}
+
+      {activeTab === "video" && <VeoVideoStudio />}
+
+      {activeTab === "music" && <LyriaMusicStudio />}
+
+      {activeTab === "image" && <ImageStudioModal />}
+
+      {activeTab === "transcribe" && <AudioTranscriberStudio />}
+
+      {false && (
         <div className="space-y-6">
           {/* Cinematic Ambient Banner */}
           <div className="relative p-6 md:p-8 rounded-3xl bg-gradient-to-br from-luxury-green-950 to-charcoal-900 border border-luxury-green-800/15 overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">

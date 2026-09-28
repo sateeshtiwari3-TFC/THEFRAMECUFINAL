@@ -56,6 +56,7 @@ interface ProjectsViewProps {
   onRedirectToRegistry?: () => void;
   initialTriggerAction?: string;
   onOpenCreativeTool?: (mode: "soundtrack" | "captions", projectId?: string) => void;
+  onOpenClientPreview?: (projectId: string) => void;
 }
 
 export const ProjectsView: React.FC<ProjectsViewProps> = ({
@@ -75,7 +76,8 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   onDeleteRevision,
   onRedirectToRegistry,
   initialTriggerAction,
-  onOpenCreativeTool
+  onOpenCreativeTool,
+  onOpenClientPreview
 }) => {
   // View mode
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban' | 'timeline'>('grid');
@@ -711,6 +713,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         editors={editors}
         revisions={revisions}
         calendarEvents={calendarEvents}
+        allProjects={projects}
         userRole={userRole}
         onUpdateProject={onUpdateProject}
         onDeleteProject={handleDeleteProject}
@@ -800,6 +803,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           revisions={revisions.filter(r => r.projectId === worksheetProject.id)}
           isOpen={isWorksheetModalOpen}
           onClose={() => setIsWorksheetModalOpen(false)}
+          onOpenClientPreview={onOpenClientPreview}
         />
       )}
 

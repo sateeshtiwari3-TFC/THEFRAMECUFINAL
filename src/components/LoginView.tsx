@@ -17,12 +17,16 @@ import {
   LogIn,
   Video,
   Camera,
-  AlertCircle
+  AlertCircle,
+  Film,
+  Search,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, setDoc, getDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Studio, Editor } from '../types';
+import { Studio, Editor, Project } from '../types';
 import Logo from './Logo';
 import LoginWeatherClockWidget from './LoginWeatherClockWidget';
 import FullScreenSplashView from './FullScreenSplashView';
@@ -31,16 +35,28 @@ import { triggerWelcomeNotification } from '../services/notificationService';
 
 interface LoginViewProps {
   onLogin: (email: string, role: 'admin' | 'editor' | 'studio', id?: string) => Promise<void>;
+  onClientPreviewLogin?: (projectId: string) => void;
   studios?: Studio[];
   editors?: Editor[];
+  projects?: Project[];
 }
 
-export default function LoginView({ onLogin, studios = [], editors = [] }: LoginViewProps) {
+export default function LoginView({ 
+  onLogin, 
+  onClientPreviewLogin,
+  studios = [], 
+  editors = [],
+  projects = []
+}: LoginViewProps) {
   const [config, setConfig] = useState<LoginScreenConfig>(getLoginScreenConfig);
   const [showSplash, setShowSplash] = useState<boolean>(() => config.showSplashOnStart);
   
-  // Auth Mode: 'signin' or 'signup'
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  // Auth Mode: 'signin' | 'signup' | 'client_preview'
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'client_preview'>('signin');
+
+  // Client Preview State
+  const [clientProjectIdInput, setClientProjectIdInput] = useState('');
+  const [isVerifyingProject, setIsVerifyingProject] = useState(false);
 
   // Sign-In State
   const [email, setEmail] = useState('');
@@ -417,6 +433,69 @@ export default function LoginView({ onLogin, studios = [], editors = [] }: Login
     }
   };
 
+  // --- Client Preview Handler ---
+  const handleClientPreviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+    const rawId = clientProjectIdInput.trim();
+    if (!rawId) {
+      setError('Please enter your Project ID (e.g. PRJ-2026-001) to view deliverables.');
+      return;
+    }
+
+    setIsVerifyingProject(true);
+    try {
+      let matchedId = rawId;
+      const cleanInput = rawId.toLowerCase();
+      
+      const foundInProps = projects.find(p => 
+        p.id?.toLowerCase() === cleanInput || 
+        (p.projectName && p.projectName.toLowerCase() === cleanInput)
+      );
+
+      if (foundInProps) {
+        matchedId = foundInProps.id;
+      } else {
+        const docSnap = await getDoc(doc(db, 'projects', rawId));
+        if (docSnap.exists()) {
+          matchedId = docSnap.id;
+        } else {
+          const q = query(collection(db, 'projects'), where('id', '==', rawId));
+          const querySnap = await getDocs(q);
+          if (!querySnap.empty) {
+            matchedId = querySnap.docs[0].id;
+          } else {
+            const allSnap = await getDocs(collection(db, 'projects'));
+            let matchedDoc: any = null;
+            allSnap.forEach(d => {
+              const dData = d.data();
+              if (d.id.toLowerCase() === cleanInput || (dData.id && dData.id.toLowerCase() === cleanInput)) {
+                matchedDoc = d.id;
+              }
+            });
+            if (matchedDoc) {
+              matchedId = matchedDoc;
+            } else {
+              throw new Error(`Project "${rawId}" was not found. Please verify your Project ID with your wedding studio.`);
+            }
+          }
+        }
+      }
+
+      setSuccessMsg(`Project verified! Opening Client Preview for ${matchedId}...`);
+      setTimeout(() => {
+        if (onClientPreviewLogin) {
+          onClientPreviewLogin(matchedId);
+        }
+      }, 350);
+    } catch (err: any) {
+      setError(err.message || 'Unable to locate project. Please verify your Project ID.');
+    } finally {
+      setIsVerifyingProject(false);
+    }
+  };
+
   const loginBgUrl = resolveBackgroundUrl(config.loginBackgroundPreset, config.loginCustomBgUrl);
 
   return (
@@ -488,8 +567,8 @@ export default function LoginView({ onLogin, studios = [], editors = [] }: Login
               {/* Top ambient highlight */}
               <div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
               
-              {/* Mode Switcher Tabs: Sign In vs Sign Up */}
-              <div className="flex items-center justify-between p-1 bg-black/60 backdrop-blur-md rounded-2xl border border-white/15 mb-6 relative z-10">
+              {/* Mode Switcher Tabs: Sign In vs Client Preview vs Sign Up */}
+              <div className="flex items-center justify-between p-1 bg-black/60 backdrop-blur-md rounded-2xl border border-white/15 mb-6 relative z-10 gap-1">
                 <button
                   type="button"
                   id="tab-signin-btn"
@@ -498,14 +577,31 @@ export default function LoginView({ onLogin, studios = [], editors = [] }: Login
                     setError('');
                     setSuccessMsg('');
                   }}
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                  className={`flex-1 py-2 px-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
                     authMode === 'signin'
                       ? 'bg-gradient-to-r from-gold-500/90 to-amber-500/90 text-black shadow-md'
                       : 'text-white/70 hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <LogIn className="w-3.5 h-3.5" />
-                  <span>Sign In (प्रवेश)</span>
+                  <span>Sign In</span>
+                </button>
+                <button
+                  type="button"
+                  id="tab-client-btn"
+                  onClick={() => {
+                    setAuthMode('client_preview');
+                    setError('');
+                    setSuccessMsg('');
+                  }}
+                  className={`flex-1 py-2 px-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                    authMode === 'client_preview'
+                      ? 'bg-gradient-to-r from-emerald-500/90 to-teal-500/90 text-black shadow-md'
+                      : 'text-emerald-300/80 hover:text-emerald-200 hover:bg-emerald-500/10'
+                  }`}
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  <span>Client Preview</span>
                 </button>
                 <button
                   type="button"
@@ -515,14 +611,14 @@ export default function LoginView({ onLogin, studios = [], editors = [] }: Login
                     setError('');
                     setSuccessMsg('');
                   }}
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold uppercase tracking-wider flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                  className={`flex-1 py-2 px-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-wider flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
                     authMode === 'signup'
                       ? 'bg-gradient-to-r from-gold-500/90 to-amber-500/90 text-black shadow-md'
                       : 'text-white/70 hover:text-white hover:bg-white/5'
                   }`}
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>Sign Up (नया खाता)</span>
+                  <span>Sign Up</span>
                 </button>
               </div>
 
@@ -530,18 +626,24 @@ export default function LoginView({ onLogin, studios = [], editors = [] }: Login
               <div className="flex items-center justify-between mb-5 relative z-10">
                 <div>
                   <h2 className="text-sm font-semibold text-white font-display uppercase tracking-wider drop-shadow-sm">
-                    {authMode === 'signin' ? 'Account Authentication' : 'Create New Studio OS Profile'}
+                    {authMode === 'signin' 
+                      ? 'Account Authentication' 
+                      : authMode === 'client_preview'
+                      ? 'Client Preview & Deliverables Portal'
+                      : 'Create New Studio OS Profile'}
                   </h2>
                   <p className="text-[10px] text-white/70 font-mono mt-0.5">
                     {authMode === 'signin' 
                       ? 'Enter security credentials to access Studio OS' 
+                      : authMode === 'client_preview'
+                      ? 'Enter your Project ID to track editing progress & download master 4K films'
                       : 'Register as an authorized Video Editor or Wedding Studio Partner'}
                   </p>
                 </div>
                 <div className="flex items-center space-x-1.5 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-emerald-500/30 shrink-0">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span className="text-[9px] font-mono text-emerald-300 uppercase tracking-widest font-semibold">
-                    {authMode === 'signin' ? 'SECURE NODE' : 'REGISTRATION'}
+                    {authMode === 'signin' ? 'SECURE NODE' : authMode === 'client_preview' ? 'CLIENT VAULT' : 'REGISTRATION'}
                   </span>
                 </div>
               </div>
@@ -661,7 +763,89 @@ export default function LoginView({ onLogin, studios = [], editors = [] }: Login
               )}
 
               {/* ========================================================================= */}
-              {/* 2. SIGN UP FORM (Editor vs Studio) */}
+              {/* 2. CLIENT PREVIEW FORM (Read-Only Deliverables & Progress Tracker) */}
+              {/* ========================================================================= */}
+              {authMode === 'client_preview' && (
+                <form onSubmit={handleClientPreviewSubmit} className="space-y-4 relative z-10">
+                  <div>
+                    <label className="block text-[10px] font-mono text-white/70 uppercase tracking-wider mb-2 font-medium">
+                      Enter Project Reference ID (प्रोजेक्ट आईडी दर्ज करें)
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/40">
+                        <Film className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        autoFocus
+                        value={clientProjectIdInput}
+                        onChange={(e) => setClientProjectIdInput(e.target.value.toUpperCase())}
+                        placeholder="e.g. PRJ-2026-001"
+                        className="w-full pl-11 pr-4 py-3.5 bg-black/40 border border-white/15 focus:border-emerald-400/80 rounded-2xl text-white font-mono placeholder-white/30 text-sm tracking-wider focus:outline-none transition-all shadow-inner"
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-sans mt-1.5">
+                      Provided by your wedding cinematography studio or lead editor
+                    </p>
+                  </div>
+
+                  {/* Quick Select from Active Projects if available */}
+                  {projects.length > 0 && (
+                    <div className="pt-1">
+                      <span className="text-[9px] font-mono uppercase tracking-widest text-emerald-300/80 font-bold block mb-1.5">
+                        Active Wedding Projects Available:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                        {projects.slice(0, 6).map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setClientProjectIdInput(p.id)}
+                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-500/40 text-[10px] text-gray-300 hover:text-emerald-200 font-mono transition-all cursor-pointer flex items-center gap-1"
+                          >
+                            <span className="font-bold text-white">{p.id}</span>
+                            <span className="text-gray-400 truncate max-w-[120px]">({p.coupleName})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Privacy Guarantee Pill */}
+                  <div className="p-3.5 rounded-2xl bg-black/40 border border-emerald-500/25 flex items-start gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-gray-300 leading-relaxed font-sans">
+                      <strong className="text-white">Strict Privacy Node:</strong> Clients can view film progress, meet assigned editors, and download 4K deliverables. Internal studio financials, budgets, and editor rates are strictly isolated.
+                    </p>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={isVerifyingProject || !clientProjectIdInput.trim()}
+                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 border border-white/30 rounded-full text-black font-extrabold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-[0_10px_30px_rgba(16,185,129,0.3)] hover:shadow-[0_15px_40px_rgba(16,185,129,0.5)] hover:scale-[1.01] active:scale-[0.99] disabled:opacity-55"
+                  >
+                    <span className="tracking-wider uppercase">
+                      {isVerifyingProject ? 'Verifying Project Access...' : 'Access Client Preview & Downloads'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('signin')}
+                      className="text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      ← Back to Studio Staff Sign In
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* ========================================================================= */}
+              {/* 3. SIGN UP FORM (Editor vs Studio) */}
               {/* ========================================================================= */}
               {authMode === 'signup' && (
                 <form onSubmit={handleSignUpSubmit} className="space-y-4 relative z-10">
